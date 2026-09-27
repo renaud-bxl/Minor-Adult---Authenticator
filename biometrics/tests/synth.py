@@ -276,6 +276,24 @@ def close_eyes(image: np.ndarray, landmarks: np.ndarray) -> np.ndarray:
     return out
 
 
+def open_mouth(image: np.ndarray, landmarks: np.ndarray, amount: float = 1.0) -> np.ndarray:
+    """Simule une bouche ouverte : la mâchoire (sous la ligne des lèvres) descend, l'ouverture est sombre."""
+    h, w = image.shape[:2]
+    left, right = landmarks[61], landmarks[291]
+    top, bottom = landmarks[13], landmarks[14]
+    width = float(np.linalg.norm(right - left))
+    drop = 0.45 * width * amount
+    cx, cy = float((left[0] + right[0]) / 2), float((top[1] + bottom[1]) / 2)
+    chin = float(landmarks[152][1])
+    xs, ys = np.meshgrid(np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32))
+    horizontal = np.clip(1 - np.abs(xs - cx) / (width * 1.1), 0, 1)
+    vertical = np.where(ys < cy, 0.0, np.clip(1 - (ys - cy) / max(1.0, (chin - cy) + drop * 1.5), 0, 1))
+    shift = (drop * np.sqrt(horizontal) * np.minimum(1.0, vertical * 3)).astype(np.float32)
+    out = cv2.remap(image, xs, ys - shift, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    cv2.ellipse(out, (int(cx), int(cy + drop / 2)), (int(width * 0.42), max(1, int(drop / 2))), 0, 0, 360, (35, 20, 25), -1)
+    return out
+
+
 def selfie_frame(face: Image.Image, size: tuple[int, int] = (640, 480)) -> np.ndarray:
     """Cadre de webcam (640 × 480) centré sur le visage d'une photo."""
     img = face.convert("RGB")

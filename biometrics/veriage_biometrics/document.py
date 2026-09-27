@@ -12,9 +12,8 @@ rien de ce qui est lu ici ne sort (seuls des codes de motif).
 Règle de concordance VIZ/MRZ, et pourquoi :
 - la date de naissance DOIT être retrouvée : c'est la donnée d'où l'on tire l'âge, donc celle qu'un fraudeur
   remplace en combinant deux pièces ;
-- ET au moins un autre champ (numéro du document ou date d'expiration) : une date de naissance seule pourrait
-  coïncider (jumeaux, fratrie née le même jour d'une autre année ? non : l'année compte ; mais une date
-  imprimée ailleurs sur la face, par exemple la date de délivrance, ne suffit pas à lier les deux faces) ;
+- ET au moins un autre champ (numéro du document ou date d'expiration) : la date de naissance seule ne lie pas
+  les deux faces à UNE pièce (deux pièces d'une même personne, ou de jumeaux, la partagent) ;
 - deux champs sur trois, et non trois : l'OCR d'un champ imprimé en petits caractères, sur fond guilloché,
   sous un hologramme, échoue souvent ; exiger les trois ferait échouer trop de vraies pièces.
 L'OCR utilise le modèle générique « eng » de Tesseract (tessdata_fast, Apache-2.0), sur l'entrée standard.
@@ -191,11 +190,10 @@ class VizReader:
             command += ["--tessdata-dir", str(self.tessdata_dir)]
         return command + ["--oem", "1", "--psm", str(psm), "-l", "eng"]
 
-    def texts(self, document: np.ndarray, deadline: float):
+    def texts(self, zone: np.ndarray, deadline: float):
         """Textes successifs (variantes de prétraitement), tant que le budget de temps le permet."""
-        gray = cv2.cvtColor(document, cv2.COLOR_BGR2GRAY)
-        # Zone des champs : à droite du portrait (cartes) ; la page entière reste lue en dernier recours.
-        big = cv2.resize(gray, None, fx=1.6, fy=1.6, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.cvtColor(zone, cv2.COLOR_BGR2GRAY)
+        big = cv2.resize(gray, None, fx=2.4, fy=2.4, interpolation=cv2.INTER_CUBIC)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(big)
         _, otsu = cv2.threshold(cv2.GaussianBlur(clahe, (3, 3), 0), 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
         for variant, psm in ((clahe, 11), (otsu, 11), (clahe, 6)):
@@ -212,12 +210,21 @@ class VizReader:
                 yield result.stdout.decode("utf-8", "ignore")
 
 
-def check_sides(document: np.ndarray, reader: VizReader, birth: dt.date, expiry: dt.date, number: str,
-                deadline: float) -> str | None:
+def viz_zone(document: np.ndarray, face: Face, kind: str) -> np.ndarray:
+    """Zone des champs imprimés : à droite du portrait ; pour un passeport, au-dessus de la MRZ (exclue : ses
+    caractères ne doivent jamais servir à « retrouver » les champs qu'on compare à elle)."""
+    height, width = document.shape[:2]
+    x0 = min(width - 50, int(face.box[0] + face.box[2] * 1.15))
+    y1 = int(height * (0.72 if kind == "passport" else 1.0))
+    return document[:y1, x0:]
+
+
+def check_sides(document: np.ndarray, face: Face, kind: str, reader: VizReader, birth: dt.date, expiry: dt.date,
+                number: str, deadline: float) -> str | None:
     """None si la face imprimée concorde avec la MRZ ; sinon un code de motif."""
     seen = ""
     best = {"birth_date": False, "document_number": False, "expiry_date": False}
-    for text in reader.texts(document, deadline):
+    for text in reader.texts(viz_zone(document, face, kind), deadline):
         seen += text
         matches = field_matches(seen, birth, expiry, number)
         best = {key: best[key] or matches[key] for key in best}

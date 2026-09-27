@@ -102,6 +102,8 @@ class MrzReader:
                         try:
                             data = mrz.parse(lines, today)
                         except mrz.MrzError as exc:
+                            if exc.reason == "document_unsupported":
+                                return MrzReading(None, exc.reason)  # inutile d'insister
                             reason = _more_specific(reason, exc.reason)
                             continue
                         if data.valid:

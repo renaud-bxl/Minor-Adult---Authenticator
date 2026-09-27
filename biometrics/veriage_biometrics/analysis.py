@@ -1,5 +1,10 @@
 """Analyse d'une demande : document (MRZ, portrait) + séquence de selfie (contrôle du vivant, comparaison).
 
+Les faces de la pièce sont LIÉES (document.py) : document détecté au format attendu sur la face du portrait,
+portrait à sa place dans ce document, champs imprimés (date de naissance + numéro ou expiration) concordant
+avec la MRZ ; pour une carte, MRZ au verso ; pour un passeport, MRZ et portrait sur la même image. Un échec
+de liaison donne un motif (document_*) et AUCUN score de correspondance : le résultat ne peut pas être positif.
+
 Réponse, et RIEN d'autre : { age, doc_expired, face_match_score, liveness_passed, mrz_valid, reasons[] }.
 Jamais d'image, de nom, de numéro ni de date de naissance. Les images décodées, les points du visage et
 les empreintes restent des variables locales, libérées à la fin de la requête ; rien n'est écrit sur
@@ -15,6 +20,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from . import document as doc
 from . import imaging, liveness
 from .faces import FaceEngine
 from .liveness import Landmarker, Measure
@@ -48,6 +54,7 @@ class Services:
     faces: FaceEngine
     mrz: MrzReader
     landmarker: Landmarker | None  # None : MediaPipe indisponible (repli YuNet, pas de clignement)
+    viz: doc.VizReader | None = None  # OCR de la face imprimée (liaison des faces) ; None : refus (motif)
 
 
 def _reference_date(value: object, today: dt.date) -> dt.date:
@@ -76,7 +83,7 @@ def analyze(payload: object, services: Services, today: dt.date | None = None) -
         raise RequestError("payload_invalid")
     reference = _reference_date(payload.get("reference_date"), today)
     document, selfie = payload.get("document"), payload.get("selfie")
-    if not isinstance(document, dict) or set(document) - {"front", "back"} or not isinstance(selfie, dict) \
+    if not isinstance(document, dict) or set(document) - {"type", "front", "back"} or not isinstance(selfie, dict) \
             or set(selfie) - {"challenge", "frames"}:
         raise RequestError("payload_invalid")
     challenge = selfie.get("challenge")
@@ -91,37 +98,55 @@ def analyze(payload: object, services: Services, today: dt.date | None = None) -
     if not isinstance(frames, list) or len(frames) > params.max_frames:
         raise RequestError("frames_invalid")
 
+    kind = document.get("type")
+    if kind not in doc.RATIOS:
+        raise RequestError("document_type_invalid")
     front = _image(document.get("front"), DOC_MAX_BYTES, DOC_MAX_SIDE)
     back = _image(document["back"], DOC_MAX_BYTES, DOC_MAX_SIDE) if document.get("back") is not None else None
+    if (kind == "id_card") != (back is not None):
+        raise RequestError("document_sides_invalid")
     reasons: list[str] = []
 
-    # 1. MRZ : au verso (carte d'identité) ; sinon au recto (page du passeport, ou faces inversées).
-    # Budget global de l'OCR (les deux faces), bien en deçà du délai de PHP (BIOMETRICS_TIMEOUT).
+    # 1. MRZ : au verso d'une carte ; sur la page du portrait pour un passeport (même image, exigé).
+    # Budget global de l'OCR (MRZ + face imprimée), bien en deçà du délai de PHP (BIOMETRICS_TIMEOUT).
     deadline = time.monotonic() + MRZ_BUDGET_S
     try:
-        reading = services.mrz.read(back if back is not None else front, reference, deadline)
-        if reading.data is None and back is not None:
-            second = services.mrz.read(front, reference, deadline)
-            reading = second if second.data is not None else reading
+        reading = services.mrz.read(back if kind == "id_card" else front, reference, deadline)
     except TesseractError:
         LOG.error("tesseract indisponible")
         raise
     data = reading.data if reading.data is not None and reading.data.valid else None
+    # Type de document choisi ≠ type de MRZ lu (TD1/TD2 : carte ; TD3 : passeport).
+    if data is not None and (data.format == "TD3") != (kind == "passport"):
+        reasons.append("document_type_mismatch")
+        data = None
     age = data.age_on(reference) if data is not None else None
     doc_expired = data.expired_on(reference) if data is not None else None
-    if data is None:
+    if data is None and not reasons:
         reasons.append(reading.reason or "mrz_not_found")
-    elif doc_expired:
+    elif data is not None and doc_expired:
         reasons.append("document_expired")
 
-    # 2. Portrait du document (recto ; verso si les faces ont été inversées).
-    doc_face_image, doc_face = front, services.faces.document_face(front)
-    if doc_face is None and back is not None:
-        doc_face_image, doc_face = back, services.faces.document_face(back)
-    doc_embedding = services.faces.embed(doc_face_image, doc_face) if doc_face is not None else None
-    if doc_embedding is None:
-        reasons.append("face_not_found_document")
-    del front, back, doc_face_image
+    # 2. Face du portrait : document détecté, portrait à sa place, champs imprimés concordants avec la MRZ.
+    doc_embedding = None
+    bound = False
+    region = doc.detect(front, kind)
+    located = doc.portrait(region, services.faces, kind) if region is not None else None
+    if region is None:
+        reasons.append("document_not_detected")
+    elif located is None:
+        reasons.append("document_portrait_not_found")
+    else:
+        rectified, doc_face = located
+        doc_embedding = services.faces.embed(rectified, doc_face)
+        if data is not None:
+            problem = doc.check_sides(rectified, doc_face, kind, services.viz, data.birth_date, data.expiry_date,
+                                      data.document_number, deadline) if services.viz is not None else "document_front_unreadable"
+            if problem is not None:
+                reasons.append(problem)
+            else:
+                bound = True
+    del front, back, region, located
 
     # 3. Séquence du selfie : mesures image par image.
     measures, embeddings, kept = [], [], {}
@@ -133,20 +158,20 @@ def analyze(payload: object, services: Services, today: dt.date | None = None) -
             raise RequestError("frames_invalid")
         image = _image(frame["image"], FRAME_MAX_BYTES, FRAME_MAX_SIDE)
         faces = services.faces.detect(image)
-        yaw = ear = None
+        yaw = ear = mar = None
         embedding = None
         if len(faces) == 1:
             embedding = services.faces.embed(image, faces[0])
             if services.landmarker is not None:
-                count, yaw, ear = services.landmarker.measure(image)
+                count, yaw, ear, mar = services.landmarker.measure(image)
                 if count != 1:
-                    yaw = ear = None
+                    yaw = ear = mar = None
             else:
                 yaw = liveness.yunet_yaw(faces[0])
             if frame["step"] == 0:
                 kept[index] = (image, faces[0])
         measures.append(Measure(t_ms=frame["t"], step=frame["step"], faces=len(faces),
-                                score=faces[0].score if faces else 0.0, yaw=yaw, ear=ear))
+                                score=faces[0].score if faces else 0.0, yaw=yaw, ear=ear, mar=mar))
         embeddings.append(embedding)
 
     ref_index = liveness.choose_reference(measures, params) if measures else None
@@ -155,7 +180,7 @@ def analyze(payload: object, services: Services, today: dt.date | None = None) -
     if ref_index is not None and embeddings[ref_index] is not None:
         ref_embedding = embeddings[ref_index]
         measures = [Measure(m.t_ms, m.step, m.faces, m.score, m.yaw, m.ear,
-                            FaceEngine.similarity(e, ref_embedding) if e is not None else None)
+                            FaceEngine.similarity(e, ref_embedding) if e is not None else None, m.mar)
                     for m, e in zip(measures, embeddings)]
         ref_image, ref_face = kept[ref_index]
         replay = moire_score(ref_image, ref_face)
@@ -167,12 +192,21 @@ def analyze(payload: object, services: Services, today: dt.date | None = None) -
     reasons.extend(result.reasons)
     if not result.passed and not result.reasons:
         reasons.append("liveness_challenge_failed")
+    liveness_passed = result.passed
+    # Selfie quasi identique au portrait du document : c'est le portrait lui-même, animé (attaque C du
+    # critique). Deux photos distinctes d'une même personne restent nettement en dessous (≈ 0,5 à 0,8).
+    if face_match is not None and face_match >= params.identical_max:
+        reasons.append("face_identical_to_document")
+        liveness_passed = False
+    # Faces non liées à une même pièce : aucun score (le résultat ne peut pas être positif).
+    if not bound:
+        face_match = None
 
     return {
         "age": age,
         "doc_expired": doc_expired,
         "face_match_score": face_match,
-        "liveness_passed": result.passed,
+        "liveness_passed": liveness_passed,
         "mrz_valid": data is not None,
         "reasons": list(dict.fromkeys(reasons)),
     }

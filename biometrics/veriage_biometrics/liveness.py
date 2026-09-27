@@ -1,12 +1,22 @@
 """Contrôle du vivant (liveness) sur une courte séquence d'images, avec des défis tirés au hasard par le
-serveur PHP (tourner la tête à gauche, à droite, cligner des yeux), dans un ordre imposé.
+serveur PHP (tourner la tête à gauche, à droite, fermer les yeux, ouvrir la bouche), dans un ordre imposé :
+4 défis, jamais deux identiques de suite, soit 4 × 3 × 3 × 3 = 108 suites possibles.
+
+NIVEAU D'ASSURANCE : FAIBLE À MODÉRÉ, sans certification (ISO/IEC 30107-3). Ce contrôle arrête une photo
+fixe ou pivotée, une vidéo rejouée qui ne suit pas les défis, un visage qui change en cours de séquence, et le
+portrait du document lui-même animé (voir analysis.py, « face_identical_to_document »). Il N'ARRÊTE PAS une
+autre photo de la personne animée en 2D et injectée (caméra virtuelle, remplacement de getUserMedia), ni un
+échange de visage en temps réel (deepfake) : aucune détection d'injection ni de deepfake.
 
 Mesures par image : MediaPipe Face Landmarker (Apache-2.0), 478 points du visage :
 - lacet (« yaw ») : décalage horizontal de la pointe du nez par rapport au milieu des joues, rapporté à
   la demi-largeur du visage (≈ 0 de face, positif quand le nez part vers la droite de l'image, c'est-à-dire
   quand la personne tourne la tête vers SA gauche : l'image de la caméra n'est pas en miroir). Une photo
-  plane que l'on fait pivoter ne déplace PAS le nez par rapport aux joues : ce défi résiste aux photos ;
-- ouverture des yeux : rapport d'aspect de l'œil (EAR, Soukupová et Čech, 2016), moyenne des deux yeux.
+  plane que l'on fait pivoter ne déplace PAS le nez par rapport aux joues : ce défi résiste à une photo plane
+  PIVOTÉE, mais pas à une photo DÉFORMÉE (animation 2D qui décale le nez), ce que l'E2E démontre ;
+- ouverture des yeux : rapport d'aspect de l'œil (EAR, Soukupová et Čech, 2016), moyenne des deux yeux ;
+- ouverture de la bouche : écart des lèvres intérieures (points 13 et 14) rapporté à la largeur de la bouche
+  (points 78 et 308), comparé à la valeur de référence de la fenêtre initiale.
 Repli si MediaPipe est indisponible : les 5 points de YuNet donnent un lacet approché, mais pas de
 mesure des paupières ; un défi « cligner » échoue alors avec le motif liveness_blink_unsupported.
 
@@ -26,12 +36,13 @@ import numpy as np
 
 from .faces import Face
 
-CHALLENGES = ("turn_left", "turn_right", "blink")
+CHALLENGES = ("turn_left", "turn_right", "blink", "open_mouth")
 LANDMARKER = "face_landmarker.task"
 
 NOSE_TIP, CHEEK_A, CHEEK_B = 1, 234, 454
 EYE_A = (33, 160, 158, 133, 153, 144)
 EYE_B = (362, 385, 387, 263, 373, 380)
+LIP_TOP, LIP_BOTTOM, MOUTH_A, MOUTH_B = 13, 14, 78, 308
 
 
 @dataclass(frozen=True)
@@ -47,11 +58,16 @@ class Params:
     min_step_ms: int = 600
     max_missing_ratio: float = 0.34
     replay_threshold: float = 30.0
+    mouth_open_min: float = 0.35
+    mouth_open_delta: float = 0.15
+    # Selfie « identique » au portrait du document (même photo animée) : au-delà, refus.
+    identical_max: float = 0.92
 
     BOUNDS = {
         "yaw_threshold": (0.1, 0.8), "neutral_max_yaw": (0.05, 0.4), "blink_ratio": (0.3, 0.9),
         "same_face_min": (0.1, 0.9), "min_frames": (3, 60), "max_frames": (10, 120), "min_step_ms": (0, 5000),
         "max_missing_ratio": (0.0, 0.8), "replay_threshold": (1.0, 1000.0),
+        "mouth_open_min": (0.15, 0.9), "mouth_open_delta": (0.05, 0.6), "identical_max": (0.8, 1.0),
     }
 
     @classmethod
@@ -84,6 +100,7 @@ class Measure:
     yaw: float | None = None
     ear: float | None = None
     similarity: float | None = None  # à l'image de référence (renseignée après coup)
+    mar: float | None = None  # ouverture de la bouche
 
 
 @dataclass
@@ -114,17 +131,18 @@ class Landmarker:
         self._landmarker = vision.FaceLandmarker.create_from_options(options)
         self._lock = threading.Lock()
 
-    def measure(self, bgr: np.ndarray) -> tuple[int, float | None, float | None]:
+    def measure(self, bgr: np.ndarray) -> tuple[int, float | None, float | None, float | None]:
         import mediapipe as mp
 
         rgb = np.ascontiguousarray(bgr[:, :, ::-1])
         with self._lock:
             result = self._landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
         if not result.face_landmarks:
-            return 0, None, None
+            return 0, None, None, None
         height, width = bgr.shape[:2]
         points = np.array([[p.x * width, p.y * height] for p in result.face_landmarks[0]], dtype=np.float32)
-        return len(result.face_landmarks), landmark_yaw(points), (eye_aspect_ratio(points, EYE_A) + eye_aspect_ratio(points, EYE_B)) / 2
+        return (len(result.face_landmarks), landmark_yaw(points),
+                (eye_aspect_ratio(points, EYE_A) + eye_aspect_ratio(points, EYE_B)) / 2, mouth_aspect_ratio(points))
 
     def close(self) -> None:
         self._landmarker.close()
@@ -134,6 +152,11 @@ def landmark_yaw(points: np.ndarray) -> float:
     mid = (points[CHEEK_A, 0] + points[CHEEK_B, 0]) / 2
     half = abs(points[CHEEK_B, 0] - points[CHEEK_A, 0]) / 2
     return float((points[NOSE_TIP, 0] - mid) / half) if half > 1e-3 else 0.0
+
+
+def mouth_aspect_ratio(points: np.ndarray) -> float:
+    width = np.linalg.norm(points[MOUTH_A] - points[MOUTH_B])
+    return float(np.linalg.norm(points[LIP_TOP] - points[LIP_BOTTOM]) / width) if width > 1e-3 else 0.0
 
 
 def eye_aspect_ratio(points: np.ndarray, idx: tuple[int, ...]) -> float:
@@ -181,6 +204,8 @@ def evaluate(measures: list[Measure], challenge: list[str], params: Params, repl
 
     open_ears = [measures[i].ear for i in neutral if measures[i].ear is not None]
     baseline = statistics.median(open_ears) if open_ears else None
+    closed_mouths = [measures[i].mar for i in neutral if measures[i].mar is not None]
+    mouth_baseline = statistics.median(closed_mouths) if closed_mouths else None
     for step, action in enumerate(challenge, start=1):
         window = [m for m in windows[step] if m.faces == 1 and m.yaw is not None]
         if not window:
@@ -196,6 +221,13 @@ def evaluate(measures: list[Measure], challenge: list[str], params: Params, repl
                 reasons.append("liveness_blink_unsupported")
                 continue
             ok = _blinked([m.ear for m in window], baseline, params.blink_ratio) \
+                and max(abs(y) for y in yaws) < params.yaw_threshold
+        elif action == "open_mouth":
+            if mouth_baseline is None or any(m.mar is None for m in window):
+                reasons.append("liveness_mouth_unsupported")
+                continue
+            peak = max(m.mar for m in window)
+            ok = peak >= max(params.mouth_open_min, mouth_baseline + params.mouth_open_delta) \
                 and max(abs(y) for y in yaws) < params.yaw_threshold
         else:
             ok = False
