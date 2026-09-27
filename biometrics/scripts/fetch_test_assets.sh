@@ -6,8 +6,10 @@
 #
 # - astronaut.png : Eileen Collins, photo officielle de la NASA (œuvre du gouvernement fédéral
 #   américain, domaine public), distribuée par scikit-image (skimage/data) ;
-# - obama.jpg, biden.jpg : portraits officiels de la Maison-Blanche (œuvres du gouvernement fédéral
-#   américain, domaine public), distribués comme exemples du projet face_recognition.
+# - obama.jpg, biden.jpg : portraits officiels de la Maison-Blanche ; obama2.jpg : photo officielle de la
+#   Maison-Blanche (Pete Souza) ; œuvres du gouvernement fédéral américain, domaine public, distribuées
+#   comme exemples du projet face_recognition. Deux photos DIFFÉRENTES d'une même personne (obama2 sur le
+#   document, obama en selfie) : un selfie identique au portrait du document est refusé.
 # Les sommes SHA-256 sont contrôlées avant installation ; aucune vraie pièce d'identité n'est utilisée.
 set -euo pipefail
 
@@ -17,6 +19,7 @@ mkdir -p "$TARGET"
 ASSETS=(
   "astronaut.png|88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5|https://raw.githubusercontent.com/scikit-image/scikit-image/v0.24.0/skimage/data/astronaut.png"
   "obama.jpg|0930e3aa8cae5920329c0c8cbc6a2ab70f47b0e67b432875beaa95cbf7e741f6|https://raw.githubusercontent.com/ageitgey/face_recognition/9f3061aaeed9a8756d2c970f5dfe066617a8281d/examples/obama.jpg"
+  "obama2.jpg|a7efcc907375274796f39646510704aa86672d59f6d5469d69af3c85590976a6|https://raw.githubusercontent.com/ageitgey/face_recognition/9f3061aaeed9a8756d2c970f5dfe066617a8281d/examples/obama2.jpg"
   "biden.jpg|3c17508bb91554c637a2eabddfae790e5bb1caba93130814fc2ac50be9760c4c|https://raw.githubusercontent.com/ageitgey/face_recognition/9f3061aaeed9a8756d2c970f5dfe066617a8281d/examples/biden.jpg"
 )
 

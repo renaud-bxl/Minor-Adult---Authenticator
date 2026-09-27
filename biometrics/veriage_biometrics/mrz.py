@@ -16,7 +16,7 @@ from __future__ import annotations
 import calendar
 import datetime as dt
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 FILLER = "<"
 ALPHABET = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<")
@@ -69,13 +69,16 @@ def check_ok(field: str, digit: str) -> bool:
 
 @dataclass(frozen=True)
 class MrzData:
-    """Ce que l'on garde d'une MRZ : format, code du document, dates, contrôles. Rien d'identifiant."""
+    """Ce que l'on garde d'une MRZ : format, code du document, dates, contrôles, et le numéro du document,
+    uniquement pour lier les deux faces de la pièce (document.check_sides). Ni nom, ni zone facultative.
+    Rien de ceci ne sort du service (le numéro est exclu de repr, donc de toute trace)."""
 
     format: str
     document_code: str
     birth_date: dt.date
     expiry_date: dt.date
     checks: tuple[tuple[str, bool], ...]
+    document_number: str = field(default="", repr=False)
 
     @property
     def valid(self) -> bool:
@@ -225,6 +228,10 @@ def parse(raw_lines: list[str], today: dt.date) -> MrzData:
     if any(set(line) - ALPHABET for line in lines):
         raise MrzError("mrz_invalid_character")
     fmt = detect_format(lines)
+    # Ancienne carte d'identité française (2 × 36, format national non ICAO : pas de date d'expiration dans
+    # la MRZ) : non prise en charge, motif dédié plutôt que « illisible » (l'utilisateur ne réussirait jamais).
+    if fmt == "TD2" and lines[0].startswith("IDFRA"):
+        raise MrzError("document_unsupported")
     lines = normalize(lines, fmt)
     code = lines[0][:2]
     if code[0] not in ACCEPTED_CODES[fmt]:
@@ -269,6 +276,7 @@ def parse(raw_lines: list[str], today: dt.date) -> MrzData:
         birth_date=birth_date(birth, today),
         expiry_date=expiry_date(expiry, today),
         checks=tuple(checks),
+        document_number=number,
     )
 
 

@@ -96,8 +96,9 @@ def card_back(lines: list[str], seed: int = 1) -> Image.Image:
     return card
 
 
-def passport_page(lines: list[str], face: Image.Image | None = None, seed: int = 3) -> Image.Image:
-    """Page de données d'un passeport fictif (TD3, 125 × 88 mm), photo et MRZ sur la même page."""
+def passport_page(lines: list[str], face: Image.Image | None = None, seed: int = 3, number: str | None = None,
+                  birth: dt.date | None = None, expiry: dt.date | None = None, style: str = "month") -> Image.Image:
+    """Page de données d'un passeport fictif (TD3, 125 × 88 mm) : photo, champs imprimés et MRZ sur la même page."""
     width, height = round(125 * PX_PER_MM), round(88 * PX_PER_MM)
     page = Image.new("RGB", (width, height), (232, 236, 244))
     draw = ImageDraw.Draw(page)
@@ -106,6 +107,7 @@ def passport_page(lines: list[str], face: Image.Image | None = None, seed: int =
     draw.text((60, 40), "UTOPIA  PASSPORT  -  SPECIMEN", fill=(60, 70, 110), font=label)
     if face is not None:
         page.paste(portrait(face, (340, 440)), (70, 120))
+    _viz(draw, 470, 120, number, birth, expiry, style, size=24, gap=30)
     font = _fit_font(44, 114 * PX_PER_MM)
     y = height - 2 * 1.45 * font.size - 40
     for line in lines:
@@ -155,18 +157,46 @@ def face_box(img: Image.Image) -> tuple[int, int, int, int] | None:
     return int(x), int(y), int(bw), int(bh)
 
 
-def card_front(face: Image.Image, seed: int = 2) -> Image.Image:
-    """Recto d'une carte ID-1 fictive : portrait à gauche, champs fictifs à droite."""
+MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+
+
+def printed_date(date: dt.date, style: str = "dots") -> str:
+    """Date imprimée sur la face des données (zone VIZ), dans les styles des documents européens."""
+    if style == "month":
+        return f"{date.day:02d} {MONTHS[date.month - 1]} {date.year}"
+    if style == "slash":
+        return f"{date.day:02d}/{date.month:02d}/{date.year}"
+    return f"{date.day:02d}.{date.month:02d}.{date.year}"
+
+
+def _viz(draw: ImageDraw.ImageDraw, x: int, y: int, number: str | None, birth: dt.date | None, expiry: dt.date | None,
+         style: str, size: int = 24, gap: int = 44) -> None:
+    label = ImageFont.load_default(size=size)
+    value = ImageFont.load_default(size=size + 4)
+    rows = [("NOM / SURNAME", "SPECIMEN"), ("PRENOMS / GIVEN NAMES", "ANNA")]
+    if birth is not None:
+        rows.append(("DATE DE NAISSANCE / DATE OF BIRTH", printed_date(birth, style)))
+    if number is not None:
+        rows.append(("N° DU DOCUMENT / DOCUMENT No", number))
+    if expiry is not None:
+        rows.append(("VALABLE JUSQU'AU / EXPIRY", printed_date(expiry, style)))
+    for i, (name, text) in enumerate(rows):
+        draw.text((x, y + 2 * gap * i), name, fill=(70, 70, 85), font=label)
+        draw.text((x, y + 2 * gap * i + gap - 8), text, fill=(15, 15, 25), font=value)
+
+
+def card_front(face: Image.Image, number: str | None = None, birth: dt.date | None = None, expiry: dt.date | None = None,
+               style: str = "dots", seed: int = 2) -> Image.Image:
+    """Recto d'une carte ID-1 fictive : portrait à gauche ; à droite, les champs imprimés (VIZ) : nom,
+    date de naissance, numéro, expiration (comme l'imposent l'ICAO 9303 et le règlement (UE) 2019/1157)."""
     width, height = round(CARD_MM[0] * PX_PER_MM), round(CARD_MM[1] * PX_PER_MM)
     card = Image.new("RGB", (width, height), (230, 238, 246))
     draw = ImageDraw.Draw(card)
     _guilloche(draw, (width, height), (196, 210, 228), seed)
     card.paste(portrait(face, (270, 346)), (45, 200))
-    title = ImageFont.load_default(size=34)
-    label = ImageFont.load_default(size=24)
-    draw.text((45, 40), "UTOPIA  -  IDENTITY CARD  -  SPECIMEN", fill=(40, 60, 120), font=title)
-    for i, text in enumerate(["NOM / SURNAME", "SPECIMEN", "PRENOMS / GIVEN NAMES", "ANNA", "NOT A REAL DOCUMENT"]):
-        draw.text((360, 210 + 50 * i), text, fill=(50, 50, 60), font=label)
+    draw.text((45, 40), "UTOPIA  -  IDENTITY CARD  -  SPECIMEN", fill=(40, 60, 120), font=ImageFont.load_default(size=34))
+    _viz(draw, 360, 110, number, birth, expiry, style, size=21, gap=26)
+    draw.text((45, 590), "NOT A REAL DOCUMENT", fill=(120, 60, 60), font=ImageFont.load_default(size=20))
     return card
 
 

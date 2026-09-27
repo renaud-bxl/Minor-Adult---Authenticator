@@ -111,7 +111,8 @@ class MrzReader:
 
 
 _REASON_RANK = {"mrz_not_found": 0, "mrz_unknown_format": 1, "mrz_invalid_character": 1, "mrz_invalid_date": 2,
-                "mrz_birth_date_in_future": 2, "mrz_unsupported_document": 3, "mrz_checksum_failed": 3}
+                "mrz_birth_date_in_future": 2, "mrz_unsupported_document": 3, "mrz_checksum_failed": 3,
+                "document_unsupported": 4}
 
 
 def _more_specific(current: str, new: str) -> str:
