@@ -16,4 +16,17 @@ return [
     'too_many_requests.message' => 'You have made too many requests. Please wait before trying again.',
     'server.title' => 'Internal error',
     'server.message' => 'An unexpected error occurred. Our team has been notified; please try again later.',
+
+    'api.bad_request' => 'Invalid request.',
+    'api.invalid_json' => 'The request body must be a valid JSON object.',
+    'api.unauthorized' => 'Missing, invalid or revoked API key. Use the “Authorization: Bearer sk_…” header.',
+    'api.insufficient_credits' => 'Insufficient credits for a new verification. Top up your account.',
+    'api.not_found' => 'Resource not found.',
+    'api.method_not_allowed' => 'HTTP method not allowed for this resource.',
+    'api.payload_too_large' => 'The request body is too large.',
+    'api.unsupported_media_type' => 'Unsupported content type: use “Content-Type: application/json”.',
+    'api.validation_failed' => 'Some fields are invalid (see “details”).',
+    'api.rate_limited' => 'Too many requests. Retry after the delay given by the Retry-After header.',
+    'api.email_locked' => 'Too many failed verifications for this address. Try again later.',
+    'api.server_error' => 'Internal error. Please try again later.',
 ];

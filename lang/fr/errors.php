@@ -16,4 +16,17 @@ return [
     'too_many_requests.message' => 'Vous avez effectué trop de requêtes. Veuillez patienter avant de réessayer.',
     'server.title' => 'Erreur interne',
     'server.message' => 'Une erreur inattendue est survenue. Notre équipe a été prévenue ; veuillez réessayer plus tard.',
+
+    'api.bad_request' => 'Requête invalide.',
+    'api.invalid_json' => 'Le corps de la requête doit être un objet JSON valide.',
+    'api.unauthorized' => 'Clé API absente, invalide ou révoquée. Utilisez l’en-tête « Authorization: Bearer sk_… ».',
+    'api.insufficient_credits' => 'Crédits insuffisants pour une nouvelle vérification. Rechargez votre compte.',
+    'api.not_found' => 'Ressource introuvable.',
+    'api.method_not_allowed' => 'Méthode HTTP non autorisée pour cette ressource.',
+    'api.payload_too_large' => 'Le corps de la requête est trop volumineux.',
+    'api.unsupported_media_type' => 'Type de contenu non pris en charge : utilisez « Content-Type: application/json ».',
+    'api.validation_failed' => 'Certains champs sont invalides (voir « details »).',
+    'api.rate_limited' => 'Trop de requêtes. Réessayez après le délai indiqué par l’en-tête Retry-After.',
+    'api.email_locked' => 'Trop d’échecs de vérification pour cette adresse. Réessayez plus tard.',
+    'api.server_error' => 'Erreur interne. Réessayez plus tard.',
 ];

@@ -29,6 +29,14 @@
         <env name="APP_ENV" value="testing" force="true"/>
         <env name="APP_DEBUG" value="false" force="true"/>
         <env name="APP_URL" value="https://www.veriage.test" force="true"/>
+        <env name="APP_DOMAIN" value="veriage.test" force="true"/>
+        <env name="VERIFY_URL" value="https://verify.veriage.test" force="true"/>
+        <env name="DEMO_URL" value="https://demo.veriage.test" force="true"/>
+        <env name="DEMO_API_KEY" value="" force="true"/>
+        <env name="DEMO_SIGNING_SECRET" value="whsec_test_demo_signing_secret_0123456789abcdef" force="true"/>
+        <env name="MAIL_QUEUE" value="sync" force="true"/>
+        <env name="VERIFICATION_MAX_FAILURES" value="5" force="true"/>
+        <env name="VERIFICATION_ALLOW_PRIVATE_NETWORK" value="false" force="true"/>
         <env name="APP_KEY" value="base64:dGVzdC1hcHAta2V5LTMyLWJ5dGVzLWxvbmctLS0tLS0=" force="true"/>
         <env name="CRYPTO_KEY" value="base64:dGVzdC1jcnlwdG8ta2V5LTMyLWJ5dGVzLWxvbmctLS0=" force="true"/>
         <env name="LANGS_ENABLED" value="fr,en" force="true"/>

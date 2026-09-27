@@ -142,4 +142,54 @@ final class HttpPrimitivesTest extends TestCase
         $pdo->errorInfo = ['23000', 1062, "Duplicate entry 'a@b.be'"];
         self::assertSame('SQLSTATE 23000, code 1062', Logger::exceptionContext($pdo)['message']);
     }
+
+    public function testJsonBodyParsing(): void
+    {
+        $json = static fn (string $body, string $type = 'application/json'): Request => new Request('POST', '/api/v1/x', [], [], ['content-type' => $type], [], [], [], $body);
+        self::assertSame(['email' => 'a@b.be'], $json('{"email":"a@b.be"}')->json());
+        self::assertSame(['a' => 1], $json('{"a":1}', 'application/merge-patch+json; charset=utf-8')->json());
+        self::assertSame([], $json('{}')->json());
+        $cases = [
+            ['{"a":1}', 'text/plain', 415, 'unsupported_media_type'],
+            ['{"a":1}', 'application/jsonp', 415, 'unsupported_media_type'],
+            ['{"a":', 'application/json', 400, 'invalid_json'],
+            ['[1,2]', 'application/json', 400, 'invalid_json'],
+            ['"text"', 'application/json', 400, 'invalid_json'],
+            [str_repeat('[', 40) . str_repeat(']', 40), 'application/json', 400, 'invalid_json'],
+            ['{"a":"' . str_repeat('x', Request::MAX_JSON_BYTES) . '"}', 'application/json', 413, 'payload_too_large'],
+        ];
+        foreach ($cases as [$body, $type, $status, $code]) {
+            try {
+                $json($body, $type)->json();
+                self::fail($code);
+            } catch (\App\Core\ApiException $e) {
+                self::assertSame([$status, $code], [$e->status(), $e->errorCode()], $code);
+            }
+        }
+    }
+
+    public function testHostHeaderNormalization(): void
+    {
+        $host = static fn (?string $value): string => (new Request('GET', '/', [], [], $value === null ? [] : ['host' => $value]))->host();
+        self::assertSame('verify.veriage.eu', $host('Verify.VeriAge.eu'));
+        self::assertSame('verify.veriage.eu', $host('verify.veriage.eu.'));
+        self::assertSame('127.0.0.1:8000', $host('127.0.0.1:8000'));
+        self::assertSame('[::1]:8000', $host('[::1]:8000'));
+        foreach ([null, '', 'evil.com/path', 'a b', "x\r\ny", 'host:port', '-bad.example', str_repeat('a', 64) . '.eu'] as $bad) {
+            self::assertSame('', $host($bad), (string) $bad);
+        }
+    }
+
+    public function testExternalRedirectOnlyAcceptsHttpUrls(): void
+    {
+        self::assertSame('https://shop.example/r?a=1', \App\Core\Response::redirectAway('https://shop.example/r?a=1')->header('Location'));
+        foreach (['javascript:alert(1)', '/internal', '//evil.com', "https://a.b/\r\nX: y", 'data:text/html,x'] as $bad) {
+            try {
+                \App\Core\Response::redirectAway($bad);
+                self::fail($bad);
+            } catch (\InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
+    }
 }

@@ -17,9 +17,10 @@ final class ConfigValidatorTest extends TestCase
     private function config(array $overrides = []): Config
     {
         $valid = [
-            'app' => ['url' => 'https://www.veriage.eu', 'domain' => 'veriage.eu', 'key' => 'base64:' . base64_encode(str_repeat('a', 32))],
+            'app' => ['url' => 'https://www.veriage.eu', 'verify_url' => 'https://verify.veriage.eu', 'domain' => 'veriage.eu', 'key' => 'base64:' . base64_encode(str_repeat('a', 32))],
             'security' => ['crypto_key' => 'base64:' . base64_encode(str_repeat('b', 32)), 'session' => ['secure_cookie' => true, 'idle_minutes' => 30]],
-            'mail' => ['driver' => 'smtp', 'from_address' => 'no-reply@veriage.eu'],
+            'mail' => ['driver' => 'smtp', 'from_address' => 'no-reply@veriage.eu', 'queue' => 'redis'],
+            'verification' => ['allow_private_network_requested' => false],
         ];
         $dir = sys_get_temp_dir() . '/veriage-cfg-' . bin2hex(random_bytes(4));
         mkdir($dir);
@@ -50,8 +51,12 @@ final class ConfigValidatorTest extends TestCase
             'mail.from_address' => 'nope',
             'security.session.secure_cookie' => false,
             'security.session.idle_minutes' => 120,
+            'app.verify_url' => 'http://verify.veriage.eu',
+            'verification.allow_private_network_requested' => true,
+            'mail.queue' => 'files',
         ]), false);
-        self::assertCount(9, $problems);
+        self::assertCount(12, $problems);
+        self::assertContains('VERIFICATION_ALLOW_PRIVATE_NETWORK est interdit en production (SSRF)', $problems);
         self::assertStringNotContainsString('c2hvcnQ', implode(' ', $problems));
     }
 

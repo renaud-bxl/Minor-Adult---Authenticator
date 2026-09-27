@@ -1,0 +1,25 @@
+# VeriAge : worker (webhooks signés + e-mails en file). Instance = identifiant du worker.
+# Installation (phase 0) : systemctl enable --now veriage-worker@1 (plusieurs instances possibles).
+[Unit]
+Description=VeriAge worker %i (webhooks, e-mails)
+After=network-online.target mariadb.service redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=veriage
+Group=veriage
+WorkingDirectory=/home/veriage/web/compose-web.net/app
+ExecStart=/usr/bin/php bin/worker.php --id=%i
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/veriage/web/compose-web.net/app/storage
+
+[Install]
+WantedBy=multi-user.target

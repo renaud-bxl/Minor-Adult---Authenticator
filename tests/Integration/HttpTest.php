@@ -137,7 +137,10 @@ final class HttpTest extends IntegrationTestCase
 
     public function testI18nApi(): void
     {
-        $client = new HttpClient();
+        // Servie par l'hôte du module (verify.), pas par le site (www.).
+        self::assertSame(404, (new HttpClient())->get('/api/v1/i18n/fr')->status());
+
+        $client = HttpClient::verify();
         $response = $client->get('/api/v1/i18n/fr');
         self::assertSame(200, $response->status());
         self::assertStringStartsWith('application/json', (string) $response->header('Content-Type'));
@@ -165,7 +168,7 @@ final class HttpTest extends IntegrationTestCase
             'redis.port' => 1,
             'app.log_path' => TestApplication::directory() . '/logs',
         ]);
-        $request = new Request('GET', '/fr/login', [], [], ['accept-language' => 'fr'], [], ['REMOTE_ADDR' => '203.0.113.1']);
+        $request = new Request('GET', '/fr/login', [], [], ['accept-language' => 'fr', 'host' => 'www.veriage.test'], [], ['REMOTE_ADDR' => '203.0.113.1']);
         $response = (new Kernel($broken))->handle($request);
         self::assertSame(500, $response->status());
         self::assertStringContainsString('Erreur interne', $response->body());

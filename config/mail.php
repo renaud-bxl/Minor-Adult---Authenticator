@@ -14,4 +14,8 @@ return [
     // Nom d'hôte du Message-ID et du HELO SMTP (sinon PHPMailer prend le nom de la machine).
     'hostname' => (string) env('APP_DOMAIN', ''),
     'outbox' => (string) env('MAIL_OUTBOX', 'storage/mail'),
+    // « redis » : e-mails mis en file (chiffrés) et envoyés par bin/worker.php, avec relances ;
+    // « sync » : envoyés par le processus web après la réponse (développement sans worker).
+    'queue' => (string) env('MAIL_QUEUE', 'redis'),
+    'max_attempts' => 5,
 ];

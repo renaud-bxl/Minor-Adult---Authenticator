@@ -21,13 +21,15 @@ final class TestApplication
         return $dir;
     }
 
-    public static function boot(): Application
+    /** @param array<string, mixed> $overrides surcharges de configuration (notation pointée) */
+    public static function boot(array $overrides = []): Application
     {
         $dir = self::directory();
 
         return Application::boot(dirname(__DIR__, 2), [
             'app.log_path' => $dir . '/logs',
             'mail.outbox' => $dir . '/mail',
+            ...$overrides,
         ]);
     }
 

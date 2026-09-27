@@ -25,4 +25,8 @@ Options -Indexes -MultiViews
     <FilesMatch "\.(css|js|svg|png|woff2)$">
         Header set Cache-Control "public, max-age=31536000, immutable"
     </FilesMatch>
+    # Widget intégré par les clients sous une URL fixe (sans empreinte de version) : cache court.
+    <Files "verify.js">
+        Header set Cache-Control "public, max-age=300"
+    </Files>
 </IfModule>

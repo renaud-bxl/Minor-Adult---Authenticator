@@ -15,7 +15,7 @@ use PHPMailer\PHPMailer\PHPMailer;
  * écrit dans la boîte d'envoi locale MAIL_OUTBOX au lieu d'être envoyé ; interdit en production).
  * Les destinataires ne sont jamais journalisés.
  */
-final class Mailer
+final class Mailer implements MailSender
 {
     /** @param array<string, string|int> $config */
     public function __construct(

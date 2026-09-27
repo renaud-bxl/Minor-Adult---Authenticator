@@ -49,6 +49,19 @@ final class Response
         return new self('', $status, ['Location' => $path]);
     }
 
+    /**
+     * Redirection vers une URL absolue EXTERNE déjà validée par l'appelant (return_url d'un client,
+     * contrôlée par UrlGuard contre ses domaines autorisés). Refuse tout ce qui n'est pas http(s).
+     */
+    public static function redirectAway(string $url, int $status = 303): self
+    {
+        if (preg_match('#^https?://[^\s/?\#]+#i', $url) !== 1 || preg_match('/[\x00-\x20\x7F]/', $url) === 1) {
+            throw new \InvalidArgumentException('URL de redirection externe invalide.');
+        }
+
+        return new self('', $status, ['Location' => $url]);
+    }
+
     public function status(): int
     {
         return $this->status;

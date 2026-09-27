@@ -1,0 +1,4 @@
+# VeriAge : tâches planifiées (à installer via HestiaCP : v-add-cron-job veriage …, jamais à la main).
+# Chemin à adapter au répertoire du projet sur le VPS (voir README).
+# Purge RGPD (sessions, vérifications expirées, jetons, comptes non validés, audit) : toutes les heures.
+17 * * * * cd /home/veriage/web/compose-web.net/app && php cron/purge.php >/dev/null 2>&1

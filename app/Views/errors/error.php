@@ -17,5 +17,5 @@ declare(strict_types=1);
 <?php if ($debug !== null): ?>
     <pre class="debug"><?= e($debug) ?></pre>
 <?php endif; ?>
-    <p><a class="button" href="<?= e(url('/')) ?>"><?= e(__('errors.common.back_home')) ?></a></p>
+    <p><a class="button" href="<?= e($homeUrl ?? url('/')) ?>"><?= e(__('errors.common.back_home')) ?></a></p>
 </section>

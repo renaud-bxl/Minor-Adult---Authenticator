@@ -275,7 +275,7 @@ final class AuthFlowTest extends IntegrationTestCase
         $client = new HttpClient();
         $token = $client->csrfToken('/en/forgot-password');
         $app = TestApplication::boot();
-        $request = new \App\Core\Request('POST', '/en/forgot-password', [], ['_token' => $token, 'email' => 'dev@acme.test'], [], $client->cookies(), ['REMOTE_ADDR' => '203.0.113.10']);
+        $request = new \App\Core\Request('POST', '/en/forgot-password', [], ['_token' => $token, 'email' => 'dev@acme.test'], ['host' => 'www.veriage.test'], $client->cookies(), ['REMOTE_ADDR' => '203.0.113.10']);
         $response = (new \App\Core\Kernel($app))->handle($request);
         self::assertSame('/en/login', $response->header('Location'));
         self::assertSame([], TestApplication::outbox());

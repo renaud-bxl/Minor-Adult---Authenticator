@@ -15,12 +15,14 @@ final class Route
      * @param list<string>                      $methods
      * @param array{0: class-string, 1: string} $handler
      * @param list<class-string>                $middleware
+     * @param string|null                       $host zone d'hôte (voir HostMap), null : tous les hôtes
      */
     public function __construct(
         public readonly array $methods,
         public readonly string $pattern,
         public readonly array $handler,
         array $middleware = [],
+        public readonly ?string $host = null,
     ) {
         $this->middleware = $middleware;
         $this->regex = self::compile($pattern);
@@ -53,6 +55,11 @@ final class Route
 
     private static function compile(string $pattern): string
     {
+        // Les accolades ne sont admises que pour délimiter un paramètre : un quantificateur « {n,m} »
+        // dans le motif d'un paramètre ne serait pas compris et produirait une route inatteignable.
+        if (preg_match('/[{}]/', (string) preg_replace('/\{[a-z_][a-z0-9_]*(?::[^{}]+)?\}/i', '', $pattern)) === 1) {
+            throw new \LogicException('Motif de route invalide (accolades hors paramètre) : ' . $pattern);
+        }
         $regex = preg_replace_callback(
             '/\{([a-z_][a-z0-9_]*)(?::([^{}]+))?\}/i',
             static fn (array $m): string => '(?P<' . $m[1] . '>' . (($m[2] ?? '') !== '' ? $m[2] : '[^/]+') . ')',

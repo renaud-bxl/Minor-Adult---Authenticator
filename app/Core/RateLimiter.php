@@ -33,6 +33,19 @@ final class RateLimiter
         return {0, count, math.max(retry, 1)}
         LUA;
 
+    private const PEEK_SCRIPT = <<<'LUA'
+        local t = redis.call('TIME')
+        local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+        local window = tonumber(ARGV[1]) * 1000
+        redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now - window)
+        local count = redis.call('ZCARD', KEYS[1])
+        if count == 0 then
+            return {0, 0}
+        end
+        local oldest = redis.call('ZRANGE', KEYS[1], 0, 0, 'WITHSCORES')
+        return {count, math.ceil((tonumber(oldest[2]) + window - now) / 1000)}
+        LUA;
+
     public function __construct(private readonly ClientInterface $redis, private readonly Crypto $crypto)
     {
     }
@@ -52,6 +65,22 @@ final class RateLimiter
             allowed: (int) $result[0] === 1,
             remaining: max(0, $maxAttempts - (int) $result[1]),
             retryAfter: (int) $result[2],
+        );
+    }
+
+    /**
+     * État d'un compteur sans enregistrer de tentative (ex. « cette adresse est-elle bloquée ? »).
+     */
+    public function peek(string $bucket, string $identifier, int $maxAttempts, int $windowSeconds): RateLimitResult
+    {
+        /** @var array{0: int, 1: int} $result */
+        $result = $this->redis->eval(self::PEEK_SCRIPT, 1, $this->key($bucket, $identifier), $windowSeconds);
+        $count = (int) $result[0];
+
+        return new RateLimitResult(
+            allowed: $count < $maxAttempts,
+            remaining: max(0, $maxAttempts - $count),
+            retryAfter: $count < $maxAttempts ? 0 : max(1, (int) $result[1]),
         );
     }
 

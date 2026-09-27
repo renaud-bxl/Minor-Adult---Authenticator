@@ -26,8 +26,13 @@ final class Kernel
     private function dispatch(Request $request): Response
     {
         try {
-            [$route, $params] = $this->app->router()->match($request->method(), $request->path());
+            $areas = $this->app->hostMap()->areasFor($request->host());
+            if ($areas === [] && ($apex = $this->apexRedirect($request)) !== null) {
+                return $apex;
+            }
+            [$route, $params] = $this->app->router()->match($request->method(), $request->path(), $areas);
             $request->setAttribute('route_params', $params);
+            $request->setAttribute('area', $route->host);
 
             $next = function (Request $r) use ($route): Response {
                 [$class, $method] = $route->handler;
@@ -46,5 +51,18 @@ final class Kernel
         } catch (\Throwable $e) {
             return (new ErrorRenderer($this->app))->render($request, $e);
         }
+    }
+
+    /** Domaine nu (ex. veriage.eu) : redirection permanente vers le site (APP_URL, ex. www.veriage.eu). */
+    private function apexRedirect(Request $request): ?Response
+    {
+        $domain = strtolower((string) $this->app->config->get('app.domain'));
+        $siteUrl = (string) $this->app->config->get('app.url');
+        $host = (string) preg_replace('/:\d+$/', '', $request->host());
+        if ($domain === '' || $host !== $domain || HostMap::authority($siteUrl) === $domain) {
+            return null;
+        }
+
+        return new Response('', 301, ['Location' => rtrim($siteUrl, '/') . $request->path()]);
     }
 }

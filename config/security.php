@@ -54,5 +54,17 @@ return [
         'password_reset_ip' => [10, 3600],
         'password_reset_email' => [3, 3600],
         'verification_resend_user' => [3, 3600],
+
+        // API (phase 2) : par IP avant authentification, par clé après, échecs d'authentification par IP.
+        'api_ip' => [300, 60],
+        'api_key' => [600, 60],
+        'api_auth_failure_ip' => [20, 300],
+        // Sessions créées pour une même adresse (par projet et par mode) : anti-bombardement de codes.
+        'api_session_email' => [10, 3600],
+        // Page de vérification hébergée : requêtes par IP, envois de code par IP.
+        'verify_page_ip' => [120, 60],
+        'verify_code_send_ip' => [20, 3600],
+        // Démonstration : sessions sandbox créées par IP.
+        'demo_session_ip' => [60, 3600],
     ],
 ];

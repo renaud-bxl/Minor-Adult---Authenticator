@@ -31,4 +31,10 @@ return [
     'password_changed.sessions' => 'For your security, all open sessions have been closed.',
     'password_changed.not_you' => 'If you did not make this change, secure your account immediately:',
     'password_changed.action' => 'reset the password',
+
+    'verification_code.subject' => 'Your verification code',
+    'verification_code.intro' => '{project} is asking you to verify your age with {app}. Enter this code to confirm your email address:',
+    'verification_code.expiry' => 'This code is valid for {minutes} minutes.',
+    'verification_code.never_share' => 'Do not share this code with anyone: we will never ask for it by phone or message.',
+    'verification_code.ignore' => 'If you did not request this, ignore this email: no verification can take place without this code.',
 ];

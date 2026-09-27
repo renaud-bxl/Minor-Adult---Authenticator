@@ -105,6 +105,31 @@ final class RouterTest extends TestCase
         self::assertSame(['X', 'y'], $router->match('GET', '/a.b')[0]->handler);
     }
 
+    public function testRoutesCanBeBoundToAHostArea(): void
+    {
+        $router = new Router();
+        $router->group('', [], static function (Router $r): void {
+            $r->get('/page', ['Site', 'page']);
+        }, 'site');
+        $router->group('/api', [], static function (Router $r): void {
+            $r->group('/v1', [], static function (Router $r): void {
+                $r->delete('/thing', ['Api', 'delete']);
+            });
+        }, 'verify');
+        self::assertSame('site', $router->match('GET', '/page', ['site'])[0]->host);
+        self::assertSame('verify', $router->match('DELETE', '/api/v1/thing', ['verify'])[0]->host, 'zone héritée par les sous-groupes');
+        // Sur un autre hôte, la route n'existe pas : 404 (et non 405).
+        $this->assertHttpStatus(404, fn () => $router->match('GET', '/page', ['verify']));
+        $this->assertHttpStatus(404, fn () => $router->match('DELETE', '/api/v1/thing', []));
+        self::assertSame(['Api', 'delete'], $router->match('DELETE', '/api/v1/thing')[0]->handler, 'sans zone : tous les hôtes');
+    }
+
+    public function testBracesOutsideParametersAreRejected(): void
+    {
+        $this->expectException(\LogicException::class);
+        (new Router())->get('/s/{id:[a-z]{32}}', ['X', 'y']);
+    }
+
     private function assertHttpStatus(int $status, callable $fn): void
     {
         try {

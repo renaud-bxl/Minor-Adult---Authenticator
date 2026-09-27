@@ -25,6 +25,16 @@ final class ConfigValidator
         if (!str_starts_with($url, 'https://') || parse_url($url, PHP_URL_HOST) === null) {
             $problems[] = 'APP_URL doit être une URL absolue en https://';
         }
+        $verifyUrl = (string) $config->get('app.verify_url');
+        if (!str_starts_with($verifyUrl, 'https://') || parse_url($verifyUrl, PHP_URL_HOST) === null) {
+            $problems[] = 'VERIFY_URL doit être une URL absolue en https://';
+        }
+        if ($config->get('verification.allow_private_network_requested') === true) {
+            $problems[] = 'VERIFICATION_ALLOW_PRIVATE_NETWORK est interdit en production (SSRF)';
+        }
+        if (!in_array($config->get('mail.queue'), ['redis', 'sync'], true)) {
+            $problems[] = 'MAIL_QUEUE doit valoir redis ou sync';
+        }
         if ((string) $config->get('app.domain') === '') {
             $problems[] = 'APP_DOMAIN est vide';
         }

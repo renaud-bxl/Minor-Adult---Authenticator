@@ -65,7 +65,9 @@ final class PasswordPolicy
         }
 
         $lower = mb_strtolower(\Normalizer::normalize($password, \Normalizer::FORM_C) ?: $password, 'UTF-8');
-        if ($this->isTrivial($lower)) {
+        // Forme compacte (sans espaces, ponctuation ni accents) : « soleil soleil soleil » est aussi trivial.
+        $compact = self::compact($lower);
+        if ($this->isTrivial($lower) || ($compact !== '' && $compact !== $lower && $this->isTrivial($compact))) {
             return ['site.validation.password_trivial', []];
         }
         if ($this->isCommon($lower)) {
@@ -155,9 +157,16 @@ final class PasswordPolicy
         return array_keys($tokens);
     }
 
+    /**
+     * Forme de comparaison : lettres et chiffres seulement, diacritiques retirés (NFD puis suppression
+     * des marques combinantes) : « Société Générale » et « Societe Generale » se rejoignent.
+     */
     private static function compact(string $value): string
     {
-        return (string) preg_replace('/[^\p{L}\p{N}]+/u', '', $value);
+        $decomposed = \Normalizer::normalize($value, \Normalizer::FORM_D);
+        $folded = (string) preg_replace('/\p{Mn}+/u', '', is_string($decomposed) ? $decomposed : $value);
+
+        return (string) preg_replace('/[^\p{L}\p{N}]+/u', '', $folded);
     }
 
     private static function reverse(string $value): string

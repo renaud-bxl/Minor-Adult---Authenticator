@@ -18,8 +18,9 @@ use App\Models\UserTokenRepository;
  * Anti-énumération : l'inscription avec une adresse déjà connue produit la même réponse (l'e-mail
  * reçu par le titulaire l'informe de la tentative), la demande de réinitialisation répond toujours
  * de la même façon, et la connexion échoue avec un message unique et une durée comparable.
- * Les e-mails sont envoyés après validation de la transaction ; un échec d'envoi est journalisé
- * (sans destinataire) sans révéler d'information à l'appelant.
+ * Les e-mails sont envoyés après validation de la transaction (mis en file chiffrée si MAIL_QUEUE=redis,
+ * envoyés et relancés par bin/worker.php) ; un échec est journalisé (sans destinataire) sans révéler
+ * d'information à l'appelant.
  */
 final class AuthService
 {
@@ -30,7 +31,7 @@ final class AuthService
         private readonly UserTokenRepository $tokens,
         private readonly AuditLog $audit,
         private readonly PasswordHasher $hasher,
-        private readonly Mailer $mailer,
+        private readonly MailSender $mailer,
         private readonly Logger $logger,
         private readonly int $verificationTtl,
         private readonly int $resetTtl,
@@ -50,7 +51,8 @@ final class AuthService
             new UserTokenRepository($db),
             new AuditLog($db),
             new PasswordHasher($argon),
-            $app->mailer(),
+            // File Redis + worker (MAIL_QUEUE=redis) ou envoi direct après la réponse (sync).
+            $app->mailSender(),
             $app->logger(),
             (int) $app->config->get('security.tokens.email_verification_ttl'),
             (int) $app->config->get('security.tokens.password_reset_ttl'),

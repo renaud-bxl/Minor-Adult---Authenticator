@@ -98,3 +98,15 @@ if (!function_exists('asset')) {
         return '/assets/' . $path . '?v=' . $version;
     }
 }
+
+if (!function_exists('partial')) {
+    /**
+     * Rendu d'un gabarit partiel (sans layout), avec les données partagées de la vue.
+     *
+     * @param array<string, mixed> $data
+     */
+    function partial(string $template, array $data = []): string
+    {
+        return Application::current()->view()->render($template, $data, null);
+    }
+}

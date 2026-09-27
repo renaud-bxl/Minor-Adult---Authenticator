@@ -21,6 +21,10 @@ ErrorHandler::register($app->logger());
 if ($app->config->get('app.env') === 'production') {
     $problems = ConfigValidator::productionProblems($app->config, PHP_SAPI !== 'cli');
     if ($problems !== []) {
+        if (PHP_SAPI === 'cli') {
+            // Opérateur en console : la liste (qui ne contient aucun secret) est affichée directement.
+            fwrite(STDERR, "Configuration de production invalide :\n  - " . implode("\n  - ", $problems) . "\n");
+        }
         throw new RuntimeException('Configuration de production invalide : ' . implode(' ; ', $problems));
     }
 }

@@ -101,6 +101,23 @@ final class PasswordPolicyTest extends TestCase
         self::assertNull($this->policy->validate('quiet river stones at dawn', ['ab@cd.be', 'SA']));
     }
 
+    public function testContextRuleIgnoresAccents(): void
+    {
+        // Ré-audit phase 1, recommandation 18 : « Societe Generale 99 » pour « Société Générale & Fils ».
+        self::assertSame(['site.validation.password_contextual', []], $this->policy->validate('Societe Generale 99', ['Société Générale & Fils']));
+        self::assertSame(['site.validation.password_contextual', []], $this->policy->validate('ma société générale!', ['Societe Generale']));
+    }
+
+    public function testRepetitionWithSeparatorsIsTrivial(): void
+    {
+        // Ré-audit phase 1, recommandation 19.
+        foreach (['soleil soleil soleil', 'soleil-soleil-soleil', 'a b c d e f g h i j', 'azerty azerty'] as $password) {
+            self::assertSame(['site.validation.password_trivial', []], $this->policy->validate($password), $password);
+        }
+        self::assertNull($this->policy->validate('#%&*!?;:<>[]{}~'), 'symboles seuls : forme compacte vide, non concernée');
+        self::assertNull($this->policy->validate('quiet river stones at dawn'));
+    }
+
     public function testHasherUsesArgon2idAndNormalizesUnicode(): void
     {
         $hasher = new PasswordHasher(['memory_cost' => 8192, 'time_cost' => 1, 'threads' => 1]);
@@ -124,6 +141,8 @@ final class PasswordPolicyTest extends TestCase
         $useless = array_filter($lines, static fn (string $line): bool => mb_strlen($line) < 12
             && (mb_strlen($line) < 4 || preg_match('/^\p{L}.*\p{L}$/us', $line) !== 1));
         self::assertSame([], array_slice($useless, 0, 5), 'entrées inatteignables');
+
+        self::assertSame([], array_values(array_filter($lines, static fn (string $l): bool => str_starts_with($l, '$hex['))), 'entrées brutes hashcat');
 
         $sorted = $lines;
         sort($sorted, SORT_STRING);

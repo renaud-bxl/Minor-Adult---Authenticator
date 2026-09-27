@@ -90,6 +90,36 @@ final class Crypto
         return mb_strtolower($email, 'UTF-8');
     }
 
+    /**
+     * Chaîne aléatoire alphanumérique (base 62, tirage uniforme) : identifiants publics et clés API,
+     * sans caractère ambigu dans une URL ou un en-tête. 40 caractères ≈ 238 bits d'entropie.
+     */
+    public static function randomAlnum(int $length): string
+    {
+        $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        $out = '';
+        for ($i = 0; $i < $length; $i++) {
+            $out .= $alphabet[random_int(0, 61)];
+        }
+
+        return $out;
+    }
+
+    /** Code numérique aléatoire à $digits chiffres (zéros de tête conservés). */
+    public static function randomDigits(int $digits): string
+    {
+        return str_pad((string) random_int(0, 10 ** $digits - 1), $digits, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Sous-clé dérivée de la clé applicative pour un usage donné (HKDF-SHA256) : une clé par usage
+     * (jetons de page, etc.), sans jamais réutiliser la clé brute.
+     */
+    public function deriveKey(string $purpose): string
+    {
+        return hash_hkdf('sha256', $this->hashKey, 32, 'veriage:' . $purpose);
+    }
+
     public static function randomToken(int $bytes = 32): string
     {
         return rtrim(strtr(base64_encode(random_bytes($bytes)), '+/', '-_'), '=');

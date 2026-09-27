@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-// Textes du module de vérification (widget, page hébergée), servis en JSON par GET /api/v1/i18n/{code}.
-// Complété en phase 2 avec la page de vérification.
+// Textes du module de vérification : page hébergée (rendue côté serveur) et widget (servi en JSON
+// par GET /api/v1/i18n/{code}). ⚖️ Textes d'information et de consentement (consent.*) à faire
+// valider par un juriste avant la mise en production.
 return [
     'widget.open' => 'Vérifier mon âge',
     'widget.title' => 'Vérification de l’âge',
@@ -11,4 +12,82 @@ return [
     'widget.close' => 'Fermer',
     'widget.popup_blocked' => 'La fenêtre de vérification a été bloquée par votre navigateur. Autorisez les fenêtres pour ce site, puis réessayez.',
     'widget.error' => 'La vérification n’a pas pu être lancée. Veuillez réessayer.',
+
+    'page.title' => 'Vérification de l’âge',
+    'page.for_project' => 'Demandée par {project}',
+    'page.language' => 'Langue',
+    'page.close' => 'Fermer',
+    'page.sandbox' => 'Mode test : aucune vérification réelle n’est effectuée et aucun e-mail n’est envoyé.',
+    'page.footer' => '{app} vérifie votre âge sans transmettre votre identité à {project}.',
+    'page.footer_generic' => '{app} vérifie votre âge sans transmettre votre identité.',
+
+    'steps.label' => 'Étapes de la vérification',
+    'steps.consent' => 'Consentement',
+    'steps.email' => 'E-mail',
+    'steps.method' => 'Vérification',
+    'steps.result' => 'Résultat',
+
+    'consent.title' => 'Vérifiez votre âge',
+    'consent.intro' => '{project} vous demande de confirmer que vous avez au moins {age} ans.',
+    'consent.info_title' => 'Avant de commencer',
+    'consent.info_email' => 'Nous vérifions d’abord que l’adresse e-mail transmise par le site vous appartient, grâce à un code envoyé à cette adresse.',
+    'consent.info_biometric' => 'Selon la méthode choisie, nous traitons une photo de votre pièce d’identité et de votre visage. Ce sont des données biométriques, protégées par l’article 9 du RGPD : elles ne sont traitées qu’avec votre consentement explicite.',
+    'consent.info_local' => 'Ce traitement a lieu uniquement sur nos serveurs, en Europe, en mémoire : les images sont effacées dès la fin de la vérification et ne sont jamais conservées ni transmises.',
+    'consent.info_shared' => '{project} reçoit uniquement votre adresse e-mail, le résultat (âge atteint ou non), la date, la méthode et la date d’expiration. Jamais votre nom, votre photo ni votre date de naissance.',
+    'consent.info_rights' => 'Vous pouvez arrêter à tout moment en fermant cette page. Vous pouvez demander l’effacement de votre vérification auprès de {project} ou de nous.',
+    'consent.checkbox' => 'J’ai lu ces informations et je consens expressément au traitement de mes données, y compris biométriques, dans le seul but de vérifier mon âge.',
+    'consent.submit' => 'Continuer',
+
+    'code.title' => 'Confirmez votre adresse e-mail',
+    'code.intro' => 'Nous avons envoyé un code à 6 chiffres à {email}.',
+    'code.intro_sandbox' => 'Saisissez le code à 6 chiffres destiné à {email}.',
+    'code.expiry' => 'Il est valable {minutes} minutes.',
+    'code.sandbox' => 'Mode test : aucun e-mail n’est envoyé. Votre code est',
+    'code.sandbox_expired' => 'Mode test : le code a expiré. Demandez-en un nouveau.',
+    'code.label' => 'Code de vérification',
+    'code.hint' => '6 chiffres, sans espace.',
+    'code.submit' => 'Valider le code',
+    'code.not_received' => 'Vous n’avez rien reçu ? Vérifiez vos courriers indésirables, ou',
+    'code.resend' => 'renvoyez un code',
+
+    'shared.title' => 'Réutiliser votre vérification ?',
+    'shared.intro' => 'Votre âge a déjà été vérifié le {date} sur un autre site partenaire, et vous aviez autorisé la réutilisation de cette vérification.',
+    'shared.question' => 'Voulez-vous la réutiliser pour {project} ? Ce site recevra uniquement le résultat, jamais votre identité.',
+    'shared.accept' => 'Oui, réutiliser ma vérification d’âge sur ce site',
+    'shared.decline' => 'Non, me vérifier à nouveau',
+
+    'method.title' => 'Choisissez une méthode de vérification',
+    'method.none' => 'Aucune méthode de vérification n’est encore disponible pour ce site. Réessayez plus tard.',
+    'method.submit' => 'Lancer la vérification',
+    'method.share_opt_in' => 'Facultatif : autoriser la réutilisation de cette vérification sur d’autres sites partenaires (elle ne le sera qu’avec votre accord, demandé sur chaque site).',
+    'method.mock.title' => 'Simulation (mode test)',
+    'method.mock.description' => 'Choisissez le résultat à simuler. Aucune donnée n’est analysée.',
+    'method.mock.legend' => 'Résultat simulé',
+    'method.mock.adult' => 'La personne a l’âge requis',
+    'method.mock.minor' => 'La personne n’a pas l’âge requis',
+    'method.mock.fail' => 'La vérification échoue',
+    'method.generic.title' => 'Vérification',
+    'method.generic.description' => 'Suivez les instructions à l’écran.',
+
+    'result.verified_title' => 'Âge vérifié',
+    'result.verified_text' => 'Vous avez bien au moins {age} ans. {project} a été informé du résultat.',
+    'result.minor_title' => 'Âge requis non atteint',
+    'result.minor_text' => 'D’après la vérification, vous n’avez pas encore {age} ans. {project} a été informé du résultat.',
+    'result.failed_title' => 'La vérification n’a pas abouti',
+    'result.failed_text' => 'Nous n’avons pas pu vérifier votre âge. Vous pouvez relancer une vérification depuis {project}.',
+    'result.expired_title' => 'Cette vérification a expiré',
+    'result.expired_text' => 'Le délai est dépassé. Relancez la vérification depuis {project}.',
+    'result.reused' => 'Résultat d’une vérification précédente, réutilisé.',
+    'result.return' => 'Retourner sur {project}',
+
+    'notice.code_sent' => 'Un code vient d’être envoyé à votre adresse e-mail.',
+    'notice.code_generated' => 'Mode test : un code a été généré (affiché ci-dessous).',
+    'notice.code_invalid' => 'Ce code est incorrect. Vérifiez-le et réessayez.',
+    'notice.code_expired' => 'Ce code a expiré. Demandez-en un nouveau.',
+    'notice.code_resend_wait' => 'Patientez une minute avant de demander un nouveau code.',
+    'notice.code_send_limit' => 'Nombre maximal d’envois atteint pour cette vérification.',
+    'notice.throttled' => 'Trop de demandes. Veuillez patienter avant de réessayer.',
+    'notice.consent_required' => 'Cochez la case de consentement pour continuer.',
+    'notice.method_invalid' => 'Cette méthode n’est pas disponible ou les informations saisies sont invalides.',
+    'notice.shared_unavailable' => 'Cette vérification ne peut plus être réutilisée. Choisissez une méthode.',
 ];

@@ -4,10 +4,23 @@ declare(strict_types=1);
 
 namespace App\Core;
 
+use App\Billing\CreditGateInterface;
+use App\Billing\UnlimitedCreditGate;
 use App\I18n\Formatter;
 use App\I18n\LocaleNegotiator;
 use App\I18n\Translator;
+use App\Models\ProjectRepository;
+use App\Models\WebhookDeliveryRepository;
+use App\Models\WebhookEndpointRepository;
 use App\Services\Mailer;
+use App\Services\MailSender;
+use App\Services\QueuedMailSender;
+use App\Verification\MethodRegistry;
+use App\Verification\Methods\MockProvider;
+use App\Verification\UrlGuard;
+use App\Verification\Webhooks\CurlWebhookTransport;
+use App\Verification\Webhooks\WebhookDispatcher;
+use App\Verification\Webhooks\WebhookTransport;
 use Dotenv\Dotenv;
 use Predis\Client as RedisClient;
 use Predis\ClientInterface;
@@ -32,6 +45,9 @@ final class Application
     private ?RateLimiter $rateLimiter = null;
     private ?Mailer $mailer = null;
     private ?Router $router = null;
+    private ?HostMap $hostMap = null;
+    private ?RedisQueue $queue = null;
+    private ?CreditGateInterface $creditGate = null;
 
     /** @var list<callable(): void> */
     private array $deferred = [];
@@ -160,6 +176,62 @@ final class Application
         );
     }
 
+    public function hostMap(): HostMap
+    {
+        return $this->hostMap ??= HostMap::fromConfig($this->config);
+    }
+
+    public function queue(): RedisQueue
+    {
+        return $this->queue ??= new RedisQueue($this->redis(), $this->crypto());
+    }
+
+    /** Envoi des e-mails : file Redis (MAIL_QUEUE=redis, worker) ou envoi direct (sync). */
+    public function mailSender(): MailSender
+    {
+        return $this->config->get('mail.queue') === 'redis' ? new QueuedMailSender($this->queue()) : $this->mailer();
+    }
+
+    public function urlGuard(): UrlGuard
+    {
+        return new UrlGuard((bool) $this->config->get('verification.allow_private_network'));
+    }
+
+    public function methods(): MethodRegistry
+    {
+        return new MethodRegistry(new MockProvider());
+    }
+
+    public function webhooks(?WebhookTransport $transport = null): WebhookDispatcher
+    {
+        /** @var array{max_attempts: int, base_delay: int, max_delay: int, connect_timeout: int, timeout: int} $config */
+        $config = $this->config->get('verification.webhooks');
+        $db = $this->db();
+
+        return new WebhookDispatcher(
+            new WebhookEndpointRepository($db),
+            new WebhookDeliveryRepository($db),
+            new ProjectRepository($db, $this->crypto()),
+            $this->crypto(),
+            $this->urlGuard(),
+            $transport ?? new CurlWebhookTransport((bool) $this->config->get('verification.allow_private_network')),
+            $this->queue(),
+            $this->logger(),
+            $config,
+        );
+    }
+
+    /** Point d'extension de la facturation (phase 6) : 402 « insufficient_credits » en cas de refus. */
+    public function creditGate(): CreditGateInterface
+    {
+        return $this->creditGate ??= new UnlimitedCreditGate();
+    }
+
+    public function setCreditGate(CreditGateInterface $gate): void
+    {
+        $this->creditGate = $gate;
+    }
+
     public function newSession(): Session
     {
         $secure = (bool) $this->config->get('security.session.secure_cookie', true);
@@ -189,7 +261,8 @@ final class Application
      * Deux raisons : la durée de la réponse ne dépend plus de l'existence d'un compte ni du temps
      * SMTP (anti-énumération par le temps), et l'utilisateur n'attend pas le serveur de messagerie.
      * En production (PHP-FPM), public/index.php ferme la connexion (fastcgi_finish_request) avant
-     * d'exécuter ces traitements. La file Redis + worker de la phase 2 pourra les reprendre.
+     * d'exécuter ces traitements. Les e-mails eux-mêmes passent par mailSender() : file Redis chiffrée
+     * et worker avec relances en production (MAIL_QUEUE=redis), envoi direct en développement (sync).
      *
      * @param callable(): void $task
      */
