@@ -1,0 +1,17 @@
+# Apache (HestiaCP) : tout ce qui n'est pas un fichier statique passe par le contrôleur frontal.
+Options -Indexes -MultiViews
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # Fichiers cachés (.env, .git…) : jamais servis.
+    RewriteRule (^|/)\. - [F,L]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    <FilesMatch "\.(css|js|svg|png|woff2)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+</IfModule>

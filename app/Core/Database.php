@@ -83,6 +83,8 @@ final class Database
     /**
      * Exécute $callback dans une transaction (validée si tout se passe bien, annulée sinon).
      * Un appel imbriqué rejoint simplement la transaction en cours.
+     * Une instruction DDL valide implicitement la transaction côté MariaDB : il n'y a alors plus
+     * rien à valider, d'où le contrôle de inTransaction() (qui reflète l'état réel du serveur).
      *
      * @template T
      * @param callable(self): T $callback
@@ -98,7 +100,9 @@ final class Database
         $pdo->beginTransaction();
         try {
             $result = $callback($this);
-            $pdo->commit();
+            if ($pdo->inTransaction()) {
+                $pdo->commit();
+            }
 
             return $result;
         } catch (\Throwable $e) {

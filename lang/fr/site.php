@@ -1,0 +1,114 @@
+<?php
+
+declare(strict_types=1);
+
+// Langue source : toute nouvelle clé est d'abord ajoutée ici.
+return [
+    'meta.description' => 'VeriAge vérifie l’âge des utilisateurs de votre plateforme sans jamais vous transmettre leurs données d’identité.',
+
+    'nav.skip_to_content' => 'Aller au contenu',
+    'nav.label' => 'Navigation principale',
+    'nav.dashboard' => 'Tableau de bord',
+    'nav.logout' => 'Se déconnecter',
+    'nav.login' => 'Se connecter',
+    'nav.register' => 'Créer un compte',
+    'nav.language' => 'Choisir la langue',
+
+    'common.close' => 'Fermer',
+
+    'footer.tagline' => 'Vérification d’âge européenne, respectueuse de la vie privée.',
+    'footer.privacy_note' => 'Nous ne transmettons ni ne conservons aucune donnée d’identité.',
+
+    'home.eyebrow' => 'Vérification d’âge pour les plateformes européennes',
+    'home.title' => 'Sachez si vos utilisateurs sont majeurs, sans jamais connaître leur identité',
+    'home.lead' => 'Envoyez-nous l’adresse e-mail de votre utilisateur : nous vérifions son âge et vous répondons simplement « majeur » ou « non majeur ».',
+    'home.cta_register' => 'Créer un compte gratuit',
+    'home.cta_login' => 'Se connecter',
+    'home.cta_dashboard' => 'Accéder au tableau de bord',
+    'home.features_title' => 'Pourquoi VeriAge',
+    'home.feature_privacy_title' => 'Confidentialité par conception',
+    'home.feature_privacy_text' => 'Aucun nom, aucune photo, aucun numéro de document ne vous est transmis ni n’est conservé après la vérification.',
+    'home.feature_inhouse_title' => 'Vérification interne',
+    'home.feature_inhouse_text' => 'Les contrôles sont réalisés sur nos propres serveurs en Europe, sans aucun prestataire tiers.',
+    'home.feature_europe_title' => 'Pensé pour l’Europe',
+    'home.feature_europe_text' => 'Conforme au RGPD, disponible dans les langues de l’Union européenne, avec la carte eID belge.',
+    'home.steps_title' => 'Comment ça marche',
+    'home.step1_title' => 'Votre plateforme crée une session',
+    'home.step1_text' => 'Un simple appel à notre API avec l’e-mail de l’utilisateur.',
+    'home.step2_title' => 'L’utilisateur prouve son âge',
+    'home.step2_text' => 'Sur notre page sécurisée ou dans notre widget, avec la méthode de son choix.',
+    'home.step3_title' => 'Vous recevez le résultat',
+    'home.step3_text' => 'Majeur ou non, la date et la méthode : rien de plus.',
+
+    'form.email' => 'Adresse e-mail',
+    'form.password' => 'Mot de passe',
+    'form.password_confirmation' => 'Confirmez le mot de passe',
+    'form.show_password' => 'Afficher',
+    'form.hide_password' => 'Masquer',
+    'form.throttled' => 'Trop de tentatives. Veuillez réessayer dans {minutes} min.',
+
+    'register.title' => 'Créer un compte',
+    'register.intro' => 'Ouvrez l’espace client de votre entreprise pour intégrer VeriAge.',
+    'register.company' => 'Nom de l’entreprise',
+    'register.password_hint' => 'Au moins {min} caractères. Une phrase facile à retenir est idéale.',
+    'register.submit' => 'Créer mon compte',
+    'register.have_account' => 'Vous avez déjà un compte ?',
+    'register.login_link' => 'Se connecter',
+    'register.check_email' => 'Merci ! Si cette adresse peut être utilisée, vous allez recevoir un e-mail pour confirmer votre inscription.',
+
+    'login.title' => 'Connexion',
+    'login.intro' => 'Accédez à l’espace client de votre entreprise.',
+    'login.forgot_link' => 'Mot de passe oublié ?',
+    'login.submit' => 'Se connecter',
+    'login.no_account' => 'Pas encore de compte ?',
+    'login.register_link' => 'Créer un compte',
+    'login.failed' => 'Adresse e-mail ou mot de passe incorrect.',
+    'login.unverified' => 'Votre adresse e-mail n’est pas encore confirmée. Nous venons de vous renvoyer le lien de confirmation.',
+
+    'logout.done' => 'Vous êtes déconnecté.',
+
+    'verify.success' => 'Votre adresse e-mail est confirmée. Vous pouvez vous connecter.',
+    'verify.invalid_title' => 'Lien de confirmation invalide',
+    'verify.invalid_message' => 'Ce lien est invalide, a déjà été utilisé ou a expiré. Connectez-vous pour recevoir un nouveau lien.',
+    'verify.back_to_login' => 'Aller à la connexion',
+
+    'forgot.title' => 'Mot de passe oublié',
+    'forgot.intro' => 'Indiquez votre adresse e-mail : si un compte y est associé, vous recevrez un lien de réinitialisation.',
+    'forgot.submit' => 'Envoyer le lien',
+    'forgot.back_to_login' => 'Retour à la connexion',
+    'forgot.sent' => 'Si un compte est associé à cette adresse, un lien de réinitialisation vient d’être envoyé. Il est valable une heure.',
+
+    'reset.title' => 'Nouveau mot de passe',
+    'reset.intro' => 'Choisissez un nouveau mot de passe. Toutes vos sessions ouvertes seront fermées.',
+    'reset.new_password' => 'Nouveau mot de passe',
+    'reset.submit' => 'Enregistrer le mot de passe',
+    'reset.success' => 'Votre mot de passe a été modifié. Vous pouvez vous connecter.',
+    'reset.invalid_title' => 'Lien de réinitialisation invalide',
+    'reset.invalid_message' => 'Ce lien est invalide, a déjà été utilisé ou a expiré.',
+    'reset.request_new_link' => 'Demander un nouveau lien',
+
+    'validation.summary' => 'Veuillez corriger les champs signalés.',
+    'validation.company_required' => 'Indiquez le nom de votre entreprise.',
+    'validation.company_too_long' => 'Le nom de l’entreprise ne peut dépasser {max} caractères.',
+    'validation.email_invalid' => 'Indiquez une adresse e-mail valide.',
+    'validation.password_too_short' => 'Le mot de passe doit contenir au moins {min} caractères.',
+    'validation.password_too_long' => 'Le mot de passe ne peut dépasser {max} caractères.',
+    'validation.password_same_as_email' => 'Le mot de passe ne peut pas être votre adresse e-mail.',
+    'validation.password_mismatch' => 'Les deux mots de passe ne correspondent pas.',
+
+    'auth.login_required' => 'Veuillez vous connecter pour accéder à cette page.',
+
+    'roles.owner' => 'Propriétaire',
+    'roles.developer' => 'Développeur',
+    'roles.accountant' => 'Comptable',
+
+    'dashboard.title' => 'Tableau de bord',
+    'dashboard.welcome' => 'Bienvenue, {company}',
+    'dashboard.intro' => 'Votre espace client est prêt.',
+    'dashboard.account_title' => 'Votre compte',
+    'dashboard.company' => 'Entreprise',
+    'dashboard.role' => 'Rôle',
+    'dashboard.member_since' => 'Membre depuis le',
+    'dashboard.next_title' => 'Prochaines étapes',
+    'dashboard.next_text' => 'La création de projets, les clés API et le suivi de vos vérifications apparaîtront bientôt ici.',
+];

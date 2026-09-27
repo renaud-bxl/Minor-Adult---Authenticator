@@ -27,7 +27,7 @@ final class Authenticate implements MiddlewareInterface
         $user = is_int($userId) ? (new UserRepository($this->app->db()))->findById($userId) : null;
 
         if ($user === null || (int) $user['auth_version'] !== $session->get('auth_version')) {
-            if ($user !== null || $userId !== null) {
+            if ($userId !== null) {
                 $session->invalidate();
             }
             $session->flash('info', 'site.auth.login_required');

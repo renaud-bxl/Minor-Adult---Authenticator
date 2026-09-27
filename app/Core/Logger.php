@@ -16,7 +16,8 @@ final class Logger
 
     private const EMAIL_PATTERN = '/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i';
     private const IPV4_PATTERN = '/\b(?:\d{1,3}\.){3}\d{1,3}\b/';
-    private const IPV6_PATTERN = '/\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}\b/i';
+    // Candidats IPv6 (formes compressées comprises), confirmés ensuite par filter_var.
+    private const IPV6_PATTERN = '/(?<![\w:.])[0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7}(?![\w:.])/i';
 
     private readonly int $threshold;
 
@@ -101,7 +102,12 @@ final class Logger
         $value = (string) preg_replace(self::EMAIL_PATTERN, '[email]', $value);
         $value = (string) preg_replace(self::IPV4_PATTERN, '[ip]', $value);
 
-        return (string) preg_replace(self::IPV6_PATTERN, '[ip]', $value);
+        return (string) preg_replace_callback(
+            self::IPV6_PATTERN,
+            static fn (array $m): string => preg_match('/[0-9a-f]/i', $m[0]) === 1
+                && filter_var($m[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false ? '[ip]' : $m[0],
+            $value,
+        );
     }
 
     /**

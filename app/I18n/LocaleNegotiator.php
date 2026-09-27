@@ -43,7 +43,7 @@ final class LocaleNegotiator
     /**
      * Première langue activée de l'en-tête Accept-Language, par q décroissant (ordre d'apparition à
      * q égal). Les sous-étiquettes régionales sont ramenées à la langue (« fr-BE » → « fr ») ; q=0
-     * exclut une langue ; « * » désigne la langue de repli.
+     * sur une langue (sans région) l'exclut ; « * » désigne la langue de repli.
      */
     public function fromAcceptLanguage(string $header): ?string
     {
@@ -63,7 +63,10 @@ final class LocaleNegotiator
             }
             $language = $tag === '*' ? $this->fallback : explode('-', $tag)[0];
             if ($quality <= 0.0) {
-                $excluded[$language] = true;
+                // « fr;q=0 » exclut le français ; « fr-BE;q=0 » n'exclut qu'une variante, pas « fr ».
+                if ($tag === $language) {
+                    $excluded[$language] = true;
+                }
                 continue;
             }
             $candidates[] = ['lang' => $language, 'q' => $quality, 'pos' => $position];

@@ -1,0 +1,113 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+    'meta.description' => 'VeriAge verifies the age of your platform’s users without ever sending you their identity data.',
+
+    'nav.skip_to_content' => 'Skip to content',
+    'nav.label' => 'Main navigation',
+    'nav.dashboard' => 'Dashboard',
+    'nav.logout' => 'Sign out',
+    'nav.login' => 'Sign in',
+    'nav.register' => 'Create an account',
+    'nav.language' => 'Choose language',
+
+    'common.close' => 'Close',
+
+    'footer.tagline' => 'Privacy-friendly European age verification.',
+    'footer.privacy_note' => 'We never share or keep any identity data.',
+
+    'home.eyebrow' => 'Age verification for European platforms',
+    'home.title' => 'Know whether your users are adults, without ever knowing who they are',
+    'home.lead' => 'Send us your user’s email address: we verify their age and simply answer “adult” or “not an adult”.',
+    'home.cta_register' => 'Create a free account',
+    'home.cta_login' => 'Sign in',
+    'home.cta_dashboard' => 'Go to dashboard',
+    'home.features_title' => 'Why VeriAge',
+    'home.feature_privacy_title' => 'Privacy by design',
+    'home.feature_privacy_text' => 'No name, photo or document number is ever sent to you or kept after the verification.',
+    'home.feature_inhouse_title' => 'In-house verification',
+    'home.feature_inhouse_text' => 'Checks run on our own servers in Europe, with no third-party provider.',
+    'home.feature_europe_title' => 'Built for Europe',
+    'home.feature_europe_text' => 'GDPR compliant, available in the languages of the European Union, with Belgian eID support.',
+    'home.steps_title' => 'How it works',
+    'home.step1_title' => 'Your platform creates a session',
+    'home.step1_text' => 'A single call to our API with the user’s email address.',
+    'home.step2_title' => 'The user proves their age',
+    'home.step2_text' => 'On our secure page or in our widget, with the method of their choice.',
+    'home.step3_title' => 'You receive the result',
+    'home.step3_text' => 'Adult or not, the date and the method: nothing more.',
+
+    'form.email' => 'Email address',
+    'form.password' => 'Password',
+    'form.password_confirmation' => 'Confirm password',
+    'form.show_password' => 'Show',
+    'form.hide_password' => 'Hide',
+    'form.throttled' => 'Too many attempts. Please try again in {minutes} min.',
+
+    'register.title' => 'Create an account',
+    'register.intro' => 'Open your company’s client area to integrate VeriAge.',
+    'register.company' => 'Company name',
+    'register.password_hint' => 'At least {min} characters. An easy-to-remember sentence works best.',
+    'register.submit' => 'Create my account',
+    'register.have_account' => 'Already have an account?',
+    'register.login_link' => 'Sign in',
+    'register.check_email' => 'Thank you! If this address can be used, you will receive an email to confirm your registration.',
+
+    'login.title' => 'Sign in',
+    'login.intro' => 'Access your company’s client area.',
+    'login.forgot_link' => 'Forgot your password?',
+    'login.submit' => 'Sign in',
+    'login.no_account' => 'No account yet?',
+    'login.register_link' => 'Create an account',
+    'login.failed' => 'Incorrect email address or password.',
+    'login.unverified' => 'Your email address has not been confirmed yet. We have just sent you the confirmation link again.',
+
+    'logout.done' => 'You have been signed out.',
+
+    'verify.success' => 'Your email address is confirmed. You can now sign in.',
+    'verify.invalid_title' => 'Invalid confirmation link',
+    'verify.invalid_message' => 'This link is invalid, has already been used or has expired. Sign in to receive a new link.',
+    'verify.back_to_login' => 'Go to sign in',
+
+    'forgot.title' => 'Forgot your password',
+    'forgot.intro' => 'Enter your email address: if an account is linked to it, you will receive a reset link.',
+    'forgot.submit' => 'Send the link',
+    'forgot.back_to_login' => 'Back to sign in',
+    'forgot.sent' => 'If an account is linked to this address, a reset link has just been sent. It is valid for one hour.',
+
+    'reset.title' => 'New password',
+    'reset.intro' => 'Choose a new password. All your open sessions will be closed.',
+    'reset.new_password' => 'New password',
+    'reset.submit' => 'Save password',
+    'reset.success' => 'Your password has been changed. You can now sign in.',
+    'reset.invalid_title' => 'Invalid reset link',
+    'reset.invalid_message' => 'This link is invalid, has already been used or has expired.',
+    'reset.request_new_link' => 'Request a new link',
+
+    'validation.summary' => 'Please correct the highlighted fields.',
+    'validation.company_required' => 'Enter your company name.',
+    'validation.company_too_long' => 'The company name cannot exceed {max} characters.',
+    'validation.email_invalid' => 'Enter a valid email address.',
+    'validation.password_too_short' => 'The password must contain at least {min} characters.',
+    'validation.password_too_long' => 'The password cannot exceed {max} characters.',
+    'validation.password_same_as_email' => 'The password cannot be your email address.',
+    'validation.password_mismatch' => 'The two passwords do not match.',
+
+    'auth.login_required' => 'Please sign in to access this page.',
+
+    'roles.owner' => 'Owner',
+    'roles.developer' => 'Developer',
+    'roles.accountant' => 'Accountant',
+
+    'dashboard.title' => 'Dashboard',
+    'dashboard.welcome' => 'Welcome, {company}',
+    'dashboard.intro' => 'Your client area is ready.',
+    'dashboard.account_title' => 'Your account',
+    'dashboard.company' => 'Company',
+    'dashboard.role' => 'Role',
+    'dashboard.member_since' => 'Member since',
+    'dashboard.next_title' => 'Next steps',
+    'dashboard.next_text' => 'Project creation, API keys and the tracking of your verifications will appear here soon.',
+];

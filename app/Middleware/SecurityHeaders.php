@@ -31,12 +31,13 @@ final class SecurityHeaders implements MiddlewareInterface
 
         $headers = [
             'Content-Security-Policy' => self::CSP,
-            'Strict-Transport-Security' => 'max-age=' . (int) $this->app->config->get('security.hsts_max_age') . '; includeSubDomains',
+            'Strict-Transport-Security' => 'max-age=' . (int) $this->app->config->get('security.hsts_max_age')
+                . ($this->app->config->get('security.hsts_include_subdomains') === true ? '; includeSubDomains' : ''),
             'X-Content-Type-Options' => 'nosniff',
             'X-Frame-Options' => 'DENY',
             // Aucun Referer : les URL de jetons (validation, réinitialisation) ne fuient jamais.
             'Referrer-Policy' => 'no-referrer',
-            'Permissions-Policy' => 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()',
+            'Permissions-Policy' => 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
             'Cross-Origin-Opener-Policy' => 'same-origin',
             'Cross-Origin-Resource-Policy' => 'same-origin',
         ];

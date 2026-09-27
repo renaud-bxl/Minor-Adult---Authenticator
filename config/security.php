@@ -5,6 +5,9 @@ declare(strict_types=1);
 return [
     'crypto_key' => (string) env('CRYPTO_KEY', ''),
     'hsts_max_age' => (int) env('HSTS_MAX_AGE', 31536000),
+    // Désactivé par défaut : sur un VPS partagé (domaine de recette), includeSubDomains imposerait
+    // HTTPS aux autres sites hébergés sous le même domaine.
+    'hsts_include_subdomains' => (bool) env('HSTS_INCLUDE_SUBDOMAINS', false),
 
     'session' => [
         'idle_minutes' => (int) env('SESSION_IDLE_MINUTES', 120),

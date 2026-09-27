@@ -1,0 +1,167 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controllers;
+
+use App\Core\Crypto;
+use App\Core\Csrf;
+use App\Core\Request;
+use App\Core\Response;
+use App\Models\AuditLog;
+use App\Services\AuthService;
+use App\Services\LoginResult;
+
+/** Inscription, validation de l'adresse, connexion et déconnexion des comptes clients. */
+final class AuthController extends Controller
+{
+    private const COMPANY_MAX_LENGTH = 190;
+
+    public function showRegister(Request $request): Response
+    {
+        return $this->registerForm();
+    }
+
+    public function register(Request $request): Response
+    {
+        $limit = $this->throttle('register_ip', $request->ip());
+        $old = ['company' => trim($request->input('company')), 'email' => trim($request->input('email'))];
+        if (!$limit->allowed) {
+            return $this->throttled($this->registerForm($old, ['form' => $this->throttledMessage($limit)], 429), $limit);
+        }
+
+        $password = $request->input('password');
+        $errors = [];
+        $companyLength = mb_strlen($old['company'], 'UTF-8');
+        if ($companyLength < 2) {
+            $errors['company'] = __('site.validation.company_required');
+        } elseif ($companyLength > self::COMPANY_MAX_LENGTH) {
+            $errors['company'] = __('site.validation.company_too_long', ['max' => self::COMPANY_MAX_LENGTH]);
+        }
+        if (!self::isValidEmail($old['email'])) {
+            $errors['email'] = __('site.validation.email_invalid');
+        }
+        $policyError = $this->passwordPolicy()->validate($password, $old['email']);
+        if ($policyError !== null) {
+            $errors['password'] = __($policyError[0], $policyError[1]);
+        } elseif (!hash_equals($password, $request->input('password_confirmation'))) {
+            $errors['password_confirmation'] = __('site.validation.password_mismatch');
+        }
+        if ($errors !== []) {
+            return $this->registerForm($old, $errors, 422);
+        }
+
+        AuthService::fromApplication($this->app)->register($old['company'], $old['email'], $password, locale(), $request->ip());
+        $request->session()->flash('success', 'site.register.check_email');
+
+        return $this->redirectTo('/login');
+    }
+
+    public function showLogin(Request $request): Response
+    {
+        return $this->loginForm();
+    }
+
+    public function login(Request $request): Response
+    {
+        $email = trim($request->input('email'));
+        $password = $request->input('password');
+
+        // Deux compteurs : par IP (attaque d'un grand nombre de comptes) et par adresse (attaque ciblée).
+        $byIp = $this->throttle('login_ip', $request->ip());
+        $byEmail = $this->throttle('login_email', Crypto::normalizeEmail($email));
+        if (!$byIp->allowed || !$byEmail->allowed) {
+            $limit = $byIp->allowed ? $byEmail : $byIp;
+
+            return $this->throttled($this->loginForm($email, $this->throttledMessage($limit), 429), $limit);
+        }
+
+        if ($email === '' || $password === '') {
+            return $this->loginForm($email, __('site.login.failed'), 422);
+        }
+
+        $auth = AuthService::fromApplication($this->app);
+        $result = $auth->attemptLogin($email, $password, $request->ip());
+
+        if ($result->status === LoginResult::UNVERIFIED && $result->user !== null) {
+            if ($this->throttle('verification_resend_user', (string) $result->user['id'])->allowed) {
+                $auth->resendVerification($result->user, locale());
+            }
+
+            return $this->loginForm($email, __('site.login.unverified'), 403);
+        }
+        if ($result->status !== LoginResult::SUCCESS || $result->user === null || $result->account === null) {
+            return $this->loginForm($email, __('site.login.failed'), 422);
+        }
+
+        $this->app->rateLimiter()->clear('login_email', Crypto::normalizeEmail($email));
+        $session = $request->session();
+        // Changement de privilège : nouvel identifiant de session (anti-fixation) et nouveau jeton CSRF.
+        $session->regenerate();
+        (new Csrf($session))->rotate();
+        $session->set('user_id', (int) $result->user['id']);
+        $session->set('auth_version', (int) $result->user['auth_version']);
+        if (!$session->has('locale')) {
+            $session->set('locale', (string) $result->account['locale']);
+        }
+        $locale = (string) $session->get('locale');
+
+        return Response::redirect(url('/dashboard', $this->app->translator()->isEnabled($locale) ? $locale : null));
+    }
+
+    public function logout(Request $request): Response
+    {
+        $session = $request->session();
+        $userId = $session->get('user_id');
+        (new AuditLog($this->app->db()))->record('auth.logout', is_int($userId) ? $userId : null, null, $request->ip());
+        $session->invalidate();
+        $session->flash('success', 'site.logout.done');
+
+        return $this->redirectTo('/');
+    }
+
+    public function verifyEmail(Request $request): Response
+    {
+        if (!AuthService::fromApplication($this->app)->verifyEmail($request->query('token'), $request->ip())) {
+            return $this->view('auth/message', [
+                'pageTitle' => __('site.verify.invalid_title'),
+                'title' => __('site.verify.invalid_title'),
+                'message' => __('site.verify.invalid_message'),
+                'linkUrl' => url('/login'),
+                'linkLabel' => __('site.verify.back_to_login'),
+                'noindex' => true,
+            ], 400);
+        }
+
+        $session = $request->session();
+        $session->flash('success', 'site.verify.success');
+
+        return $this->redirectTo(is_int($session->get('user_id')) ? '/dashboard' : '/login');
+    }
+
+    /**
+     * @param array{company?: string, email?: string} $old
+     * @param array<string, string>                   $errors
+     */
+    private function registerForm(array $old = [], array $errors = [], int $status = 200): Response
+    {
+        $policy = $this->passwordPolicy();
+
+        return $this->view('auth/register', [
+            'pageTitle' => __('site.register.title'),
+            'old' => $old,
+            'errors' => $errors,
+            'passwordMin' => $policy->minLength(),
+            'passwordMax' => $policy->maxLength(),
+        ], $status);
+    }
+
+    private function loginForm(string $email = '', ?string $error = null, int $status = 200): Response
+    {
+        return $this->view('auth/login', [
+            'pageTitle' => __('site.login.title'),
+            'email' => $email,
+            'error' => $error,
+        ], $status);
+    }
+}

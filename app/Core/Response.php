@@ -112,6 +112,7 @@ final class Response
     public function send(bool $withBody = true): void
     {
         if (!headers_sent()) {
+            header_remove('X-Powered-By');
             http_response_code($this->status);
             foreach ($this->headers as [$name, $value]) {
                 header($name . ': ' . $value, true);

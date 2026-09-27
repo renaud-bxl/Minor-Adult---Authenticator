@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         cacheDirectory=".phpunit.cache"
+         colors="true"
+         failOnWarning="true"
+         failOnRisky="true"
+         failOnDeprecation="true"
+         failOnNotice="true"
+         beStrictAboutOutputDuringTests="true">
+    <testsuites>
+        <!-- Aucune dépendance externe. -->
+        <testsuite name="unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <!-- MariaDB et Redis réels requis (base veriage_test, Redis DB 15). -->
+        <testsuite name="integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <ini name="error_reporting" value="-1"/>
+        <env name="APP_ENV" value="testing" force="true"/>
+        <env name="APP_DEBUG" value="false" force="true"/>
+        <env name="APP_URL" value="https://www.veriage.test" force="true"/>
+        <env name="APP_KEY" value="base64:dGVzdC1hcHAta2V5LTMyLWJ5dGVzLWxvbmctLS0tLS0=" force="true"/>
+        <env name="CRYPTO_KEY" value="base64:dGVzdC1jcnlwdG8ta2V5LTMyLWJ5dGVzLWxvbmctLS0=" force="true"/>
+        <env name="LANGS_ENABLED" value="fr,en" force="true"/>
+        <env name="LANG_FALLBACK" value="en" force="true"/>
+        <env name="DB_HOST" value="127.0.0.1" force="true"/>
+        <env name="DB_PORT" value="3306" force="true"/>
+        <env name="DB_DATABASE" value="veriage_test" force="true"/>
+        <env name="DB_USERNAME" value="veriage" force="true"/>
+        <env name="DB_PASSWORD" value="veriage_dev" force="true"/>
+        <env name="REDIS_HOST" value="127.0.0.1" force="true"/>
+        <env name="REDIS_PORT" value="6379" force="true"/>
+        <env name="REDIS_PASSWORD" value="" force="true"/>
+        <env name="REDIS_DB" value="15" force="true"/>
+        <env name="REDIS_PREFIX" value="veriage_test:" force="true"/>
+        <env name="SESSION_SECURE_COOKIE" value="true" force="true"/>
+        <env name="MAIL_DRIVER" value="log" force="true"/>
+        <env name="MAIL_FROM_ADDRESS" value="no-reply@veriage.test" force="true"/>
+        <env name="LOG_LEVEL" value="debug" force="true"/>
+        <!-- Argon2id allégé pour la vitesse des tests (la production garde 64 Mio / 4 itérations). -->
+        <env name="PASSWORD_ARGON2_MEMORY" value="8192" force="true"/>
+        <env name="PASSWORD_ARGON2_TIME" value="1" force="true"/>
+    </php>
+</phpunit>

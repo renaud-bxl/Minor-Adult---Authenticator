@@ -4,7 +4,8 @@ Légende : `[ ]` à faire · `[~]` en cours · `[x]` terminé (avec preuve) · `
 
 ## État actuel
 - [x] Section 0 : lessons.md, todo.md, CLAUDE.md créés. Questions bloquantes posées et tranchées (voir CLAUDE.md).
-- [ ] **Prochaine étape : validation du plan détaillé de la phase 1 par Renaud**, puis implémentation.
+- [x] Plan de la phase 1 validé (protocole multi-agents, 2026-09-27).
+- [~] **Phase 1 implémentée par le créateur** : en attente du contrôleur puis de l'audit critique.
 
 ---
 
@@ -21,57 +22,64 @@ Légende : `[ ]` à faire · `[~]` en cours · `[x]` terminé (avec preuve) · `
 - [ ] Services systemd : `veriage-worker@.service` (vérifications, webhooks), `veriage-biometrics.service`. Crontab : `deploy/crontab`.
 - [ ] Script `deploy/deploy.sh` (git pull, composer install --no-dev, migrations, cache, redémarrage des workers).
 
-## Phase 1 : Fondations  ← PLAN DÉTAILLÉ À VALIDER
+## Phase 1 : Fondations  ← IMPLÉMENTÉE (créateur, 2026-09-27), en attente de contrôle et d'audit
 Objectif : squelette MVC fonctionnel, i18n FR+EN, authentification des comptes clients, layout. Aucune logique de vérification.
+Preuves : `vendor/bin/phpunit` → OK (104 tests, 366 assertions : unit 80/169, integration 24/197) ; `php tools/check_translations.php` → 100 % fr et en ; cURL dans `docs/api-tests.md` ; captures dans `docs/screenshots/phase-1/`.
 
 ### 1.1 Projet et configuration
-- [ ] `composer.json` : PHP ≥ 8.2, PSR-4 `App\` → `app/`. Dépendances : `vlucas/phpdotenv`, `phpmailer/phpmailer`, `predis/predis`. Dev : `phpunit/phpunit` (justifié : les tests sont exigés par la section 9).
-- [ ] `.gitignore`, `.env.example` complet (APP_*, DB_*, REDIS_*, MAIL_*, CRYPTO_KEY, LANGS_ENABLED…).
-- [ ] `app/bootstrap.php` : chargement du `.env`, fuseau Europe/Brussels, gestion des erreurs (page 500 générique, log détaillé sans données personnelles), helpers globaux.
-- [ ] `config/*.php` : app, database, redis, mail, i18n, security.
+- [x] `composer.json` : PHP ≥ 8.2 (plateforme figée à 8.2.0 pour le lock), PSR-4 `App\` → `app/`. Dépendances : `vlucas/phpdotenv` 5.7, `phpmailer/phpmailer` 6.12, `predis/predis` 2.4. Dev : `phpunit/phpunit` 11.5 (justifié : tests exigés par la section 9 ; 11.x car la 12 exige PHP 8.3).
+- [x] `.gitignore`, `.env.example` complet (APP_*, DB_*, REDIS_*, SESSION_*, PASSWORD_ARGON2_*, MAIL_*, CRYPTO_KEY, LANGS_ENABLED…) ; `bin/generate-keys.php`.
+- [x] `app/bootstrap.php` : `.env`, fuseau Europe/Brussels, `ErrorHandler` (page 500 générique, journal JSON sans donnée personnelle : e-mails et IP masqués, message des PDOException écarté).
+- [x] `config/*.php` : app, database, redis, mail, i18n, security.
 
 ### 1.2 Noyau MVC (`app/Core`)
-- [ ] `Router` : méthodes HTTP, paramètres `{id}`, groupes avec préfixe et middlewares, 404/405.
-- [ ] `Request` / `Response` (HTML, JSON, redirection), `View` (vues PHP + layouts, `e()` pour échapper).
-- [ ] `Database` : PDO MariaDB (`ERRMODE_EXCEPTION`, `EMULATE_PREPARES=false`, utf8mb4), transactions.
-- [ ] `Session` : sessions PHP stockées dans Redis (handler maison sur predis), cookies `Secure`/`HttpOnly`/`SameSite=Lax`, régénération de l'ID à la connexion.
-- [ ] `Csrf` (jeton par session, vérifié par un middleware sur toute requête non-GET du site).
-- [ ] `Crypto` : AES-256-GCM (e-mails chiffrés), HMAC-SHA256 salé (hash d'e-mail). Base des phases suivantes.
-- [ ] `RateLimiter` sur Redis (fenêtre glissante), utilisé dès la phase 1 pour la connexion.
-- [ ] Middlewares : `SecurityHeaders` (CSP stricte sans inline, HSTS, nosniff, Referrer-Policy, X-Frame-Options DENY), `Csrf`, `Auth`, `Guest`, `Locale`.
+- [x] `Router` : méthodes, `{id}` / `{id:regex}`, groupes imbriqués (préfixe + middlewares), 404/405 (+ `Allow`), HEAD → GET. Preuve : `RouterTest`.
+- [x] `Request` / `Response` (HTML, JSON, redirection interne uniquement), `View` (layouts, `e()`). `Kernel` + `ErrorRenderer` (pages traduites / JSON pour l'API).
+- [x] `Database` : PDO (`ERRMODE_EXCEPTION`, `EMULATE_PREPARES=false`, utf8mb4, sql_mode strict, UTC), transactions.
+- [x] `Session` : données JSON dans Redis (`RedisSessionHandler`, predis), cookie `__Host-` Secure/HttpOnly/SameSite=Lax, mode strict anti-fixation, régénération à la connexion, expiration d'inactivité + absolue, aucune session créée pour un visiteur sans état. Choix : gestionnaire maison plutôt que `session_start()` (pas d'état global, testable). Preuves : `SessionTest`, `RedisSessionHandlerTest`.
+- [x] `Csrf` (jeton par session, `hash_equals`, rotation à la connexion) + middleware sur toute requête non sûre. Preuve : `CsrfTest`, 419 en cURL.
+- [x] `Crypto` : AES-256-GCM versionné avec AAD, HMAC-SHA256 d'e-mail salé par client et poivré, jetons base64url hashés en SHA-256. Preuve : `CryptoTest`.
+- [x] `RateLimiter` Redis (fenêtre glissante, script Lua atomique horodaté par Redis, identifiants hashés). Preuve : `RateLimiterTest`, 429 en cURL.
+- [x] Middlewares : `SecurityHeaders` (CSP stricte sans inline, HSTS (`includeSubDomains` désactivé par défaut : VPS partagé), nosniff, Referrer-Policy, X-Frame-Options DENY, Permissions-Policy, COOP/CORP), `VerifyCsrfToken`, `Authenticate`, `RedirectIfAuthenticated` (Guest), `SetLocale`, `StartSession`.
 
 ### 1.3 Migrations
-- [ ] `bin/migrate.php` : applique `database/migrations/NNNN_nom.sql` dans l'ordre, suivi via une table `migrations`, chaque migration dans une transaction.
-- [ ] Tables initiales : `accounts` (entreprise cliente, langue préférée), `users`, `account_users` (rôle : owner / developer / accountant), `user_tokens` (validation d'e-mail, réinitialisation ; jetons stockés hashés, expiration), `audit_log` (acteur, action, date, IP tronquée, sans donnée d'identité).
+- [x] `bin/migrate.php` (+ `--status`) / `App\Core\Migrator` : fichiers `NNNN_nom.sql` ordonnés, table `migrations`, transaction par migration, verrou `GET_LOCK`. Limite MariaDB documentée : le DDL valide implicitement ; règle « un DDL par migration » vérifiée par un test. Preuves : `MigratorTest`, `MigratorIntegrationTest`.
+- [x] Tables : `accounts` (langue préférée), `users` (`auth_version`), `account_users` (owner / developer / accountant), `user_tokens` (SHA-256, expiration, usage unique), `audit_log` (IP tronquée /24 ou /48, aucune donnée d'identité).
 
 ### 1.4 Internationalisation
-- [ ] `App\I18n\Translator` + helper `__('site.home.title', ['name' => …])`, domaines `site`, `module`, `emails`, `billing`, `errors` dans `lang/{code}/{domaine}.php`.
-- [ ] Chaîne de repli : langue demandée → EN → clé (+ log de la clé manquante).
-- [ ] Détection : paramètre `lang` > préférence du compte > préfixe d'URL > `Accept-Language` (avec q-values) > EN.
-- [ ] URL préfixées `/{lang}/…` pour le site, redirection de `/` vers la langue détectée, balises `hreflang` générées dans le layout.
-- [ ] `App\I18n\Formatter` : dates, nombres, devises (`IntlDateFormatter`, `NumberFormatter`).
-- [ ] Endpoint `GET /api/v1/i18n/{code}` : clés du domaine `module` en JSON (servira au widget), avec cache HTTP.
-- [ ] FR (source) + EN complets. Les 24 dossiers `lang/` sont créés, mais seules les langues de `LANGS_ENABLED` (fr,en) sont servies jusqu'à la phase 8.
-- [ ] `tools/check_translations.php` : clés manquantes et orphelines par langue (référence : FR), plus un scan du code pour les `__()` inconnus. Code retour ≠ 0 si moins de 100 %.
+- [x] `App\I18n\Translator` + `__('site.home.title', ['name' => …])`, domaines `site`, `module`, `emails`, `billing` (vide jusqu'en phase 6), `errors`.
+- [x] Repli : langue demandée → EN → clé (+ avertissement journalisé une fois par clé). Preuve : `TranslatorTest`.
+- [x] Détection : `?lang=` (mémorisé en session et comme préférence du compte si connecté) > préférence du compte (chargée en session à la connexion) > préfixe d'URL > `Accept-Language` (q-values) > EN. Preuve : `LocaleNegotiatorTest`, `HttpTest`.
+- [x] URL `/{lang}/…`, `/` → langue détectée (`Vary: Accept-Language, Cookie`), `hreflang` + `x-default` dans le layout.
+- [x] `App\I18n\Formatter` : dates (fuseau Bruxelles), nombres, devises en centimes. Preuve : `FormatterTest`.
+- [x] `GET /api/v1/i18n/{code}` : domaine `module` en JSON, `Cache-Control: public, max-age=3600`, ETag/304, CORS `*`.
+- [x] FR (source) + EN complets (135 clés). 24 dossiers `lang/` créés ; seules fr,en servies (`LANGS_ENABLED`).
+- [x] `tools/check_translations.php` : manquantes, orphelines, paramètres `{x}` divergents, scan du code (clés inconnues), `--all`, code retour ≠ 0 si < 100 %.
 
 ### 1.5 Authentification des comptes clients
-- [ ] Inscription (entreprise + e-mail + mot de passe ; Argon2id, 12 caractères minimum), e-mail de validation (jeton à usage unique, 24 h).
-- [ ] Connexion / déconnexion, rate limiting (par IP et par e-mail), message d'erreur générique (pas d'énumération des comptes).
-- [ ] Mot de passe oublié / réinitialisation (jeton 1 h, invalidation des sessions existantes).
-- [ ] `App\Services\Mailer` : PHPMailer en SMTP, gabarits HTML + texte traduits ; en dev, `MAIL_DRIVER=log`.
-- [ ] Tableau de bord client minimal (page protégée « Bienvenue », elle sera remplie en phase 5).
+- [x] Inscription (entreprise + e-mail + mot de passe ; Argon2id, 12 caractères min., 1 024 max., ≠ e-mail) ; e-mail de validation (jeton à usage unique, 24 h). Adresse déjà inscrite : même réponse + e-mail d'information au titulaire.
+- [x] Connexion / déconnexion, rate limiting (IP et e-mail), message générique, temps de réponse comparable (hash factice), connexion refusée tant que l'adresse n'est pas confirmée (lien renvoyé, limité à 3/h).
+- [x] Mot de passe oublié / réinitialisation (jeton 1 h, consommation atomique, invalidation de toutes les sessions via `auth_version`, e-mail « mot de passe modifié »).
+- [x] `App\Services\Mailer` : PHPMailer SMTP, gabarits HTML + texte traduits ; `MAIL_DRIVER=log` écrit le MIME dans `storage/mail/` (interdit en production), destinataires jamais journalisés.
+- [x] Tableau de bord minimal protégé (« Bienvenue, {entreprise} »).
 - [ ] 2FA TOTP : phase 5 (voir plus bas).
 
 ### 1.6 Layout et front
-- [ ] Layout HTML sémantique, CSS vanilla (variables, responsive, mode sombre), sélecteur de langue, messages flash, pages 404/500 traduites.
-- [ ] JS vanilla minimal (aucun script inline, compatible CSP).
+- [x] Layout sémantique, CSS vanilla (variables, responsive, mode sombre), sélecteur de langue sans JS (`details`), messages flash, pages 404/405/419/429/500 traduites, lien d'évitement, attributs ARIA sur les erreurs de formulaire.
+- [x] JS vanilla minimal (`public/assets/js/app.js`, aucun script inline, libellés via `data-*` traduits).
 
-### 1.7 Vérification de la phase 1 (preuves exigées)
-- [ ] PHPUnit : Router, Translator (repli, paramètres, détection Accept-Language), Crypto (aller-retour, hash stable par sel), Csrf, RateLimiter, validation des mots de passe, migrations.
-- [ ] Tests d'intégration sur MariaDB + Redis réels (installés dans le conteneur de dev) : inscription → validation → connexion → réinitialisation.
-- [ ] `tools/check_translations.php` → 100 % pour fr et en.
-- [ ] `php -S` + cURL : en-têtes de sécurité présents, `/` → `/fr/` selon Accept-Language, POST sans CSRF → 419, 6e tentative de connexion → 429.
-- [ ] Captures d'écran (Playwright) des pages accueil, inscription, connexion en FR et EN, sur desktop et mobile.
+### 1.7 Vérification de la phase 1 (preuves)
+- [x] PHPUnit unitaires : Router, Translator, LocaleNegotiator (Accept-Language), Crypto, Session, Csrf, PasswordPolicy/Argon2id, Migrator, Formatter, primitives HTTP/Logger/IP → OK (80 tests, 169 assertions).
+- [x] Intégration MariaDB 10.11 + Redis 7 réels : inscription → validation → connexion → réinitialisation → sessions invalidées, anti-énumération, 429, CSRF, langues, API i18n, 500 générique (Redis coupé), migrations → OK (24 tests, 197 assertions).
+- [x] `php tools/check_translations.php` → 100 % fr (135/135) et en (135/135), 0 clé inconnue.
+- [x] `php -S` + cURL (`docs/api-tests.md`) : en-têtes présents, `/` → `/fr/` ou `/en/` selon Accept-Language, POST sans CSRF → 419, 6e tentative → 429 (`Retry-After`).
+- [x] Captures Playwright (Chromium) : accueil, inscription, connexion × FR/EN × desktop (1366 px)/mobile (390 px) → `docs/screenshots/phase-1/` (12 fichiers).
+
+### Limites connues (à traiter plus tard)
+- [ ] Envoi des e-mails synchrone dans la requête : la différence de durée « compte existant / inexistant » sur « mot de passe oublié » dépend du temps SMTP. À passer par la file Redis (worker, phase 2).
+- [ ] Verrouillage par adresse e-mail (5 / 15 min) : un tiers peut bloquer temporairement la connexion d'un compte (compromis classique, à réévaluer avec la 2FA en phase 5).
+- [ ] `php -S` ne pose pas les en-têtes de sécurité sur les fichiers statiques ; en production : template Hestia (phase 0).
+- [ ] Dossiers `app/Verification`, `app/Billing`, `cron/`, `deploy/` encore vides (phases suivantes).
 
 ---
 
