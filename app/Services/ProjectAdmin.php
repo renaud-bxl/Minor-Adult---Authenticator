@@ -36,6 +36,7 @@ final class ProjectAdmin
         /** @var list<int> */
         private readonly array $allowedMinAges,
         private readonly int $defaultValidityDays,
+        private readonly int $defaultNegativeTtlHours = 24,
     ) {
     }
 
@@ -55,6 +56,7 @@ final class ProjectAdmin
             $app->urlGuard(),
             $ages,
             (int) $app->config->get('verification.default_validity_days'),
+            (int) $app->config->get('verification.default_negative_ttl_hours'),
         );
     }
 
@@ -73,7 +75,10 @@ final class ProjectAdmin
         ?int $validityDays = null,
         array $webhooks = [],
         bool $acceptShared = false,
+        ?int $negativeTtlHours = null,
     ): array {
+        $negativeTtlHours ??= $this->defaultNegativeTtlHours;
+        self::assertNegativeTtl($negativeTtlHours);
         $name = TextInput::normalize($name);
         if ($name === null || $name === '' || mb_strlen($name) > 190) {
             throw new \InvalidArgumentException('Nom de projet invalide.');
@@ -94,8 +99,8 @@ final class ProjectAdmin
             throw new \InvalidArgumentException('Compte introuvable : ' . $accountId);
         }
 
-        return $this->db->transaction(function () use ($accountId, $name, $origins, $minAge, $validityDays, $webhooks, $acceptShared): array {
-            [$project, $secrets] = $this->projects->create($accountId, $name, $minAge, $validityDays, $origins, self::DEFAULT_METHODS, $acceptShared);
+        return $this->db->transaction(function () use ($accountId, $name, $origins, $minAge, $validityDays, $webhooks, $acceptShared, $negativeTtlHours): array {
+            [$project, $secrets] = $this->projects->create($accountId, $name, $minAge, $validityDays, $origins, self::DEFAULT_METHODS, $acceptShared, $negativeTtlHours);
             $keys = ['test' => $this->keys->create($project->id, false), 'live' => $this->keys->create($project->id, true)];
             foreach ($webhooks as $mode => $url) {
                 $this->webhooks->create($project->id, $mode === 'live', $url);
@@ -104,6 +109,21 @@ final class ProjectAdmin
 
             return ['project' => $project, 'keys' => $keys, 'secrets' => $secrets];
         });
+    }
+
+    /** Validité d'un résultat négatif (heures, 0 à 720 ; 0 : jamais réutilisé). */
+    public function setNegativeTtl(Project $project, int $hours): void
+    {
+        self::assertNegativeTtl($hours);
+        $this->projects->updateNegativeTtl($project->id, $hours);
+        $this->audit->record('project.negative_ttl_updated', null, $project->accountId, null, $project->id, ['count' => $hours]);
+    }
+
+    private static function assertNegativeTtl(int $hours): void
+    {
+        if ($hours < 0 || $hours > 720) {
+            throw new \InvalidArgumentException('Validité d\'un résultat négatif invalide (0 à 720 heures).');
+        }
     }
 
     public function createAccount(string $name, string $locale = 'fr'): int

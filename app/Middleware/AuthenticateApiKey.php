@@ -32,7 +32,7 @@ final class AuthenticateApiKey implements MiddlewareInterface
         $this->throttle('api_ip', $ipKey);
 
         $header = (string) $request->header('Authorization');
-        $key = preg_match('/^Bearer\s+(\S+)$/D', $header, $m) === 1 ? $m[1] : '';
+        $key = preg_match('/^Bearer\s+(\S+)$/Di', $header, $m) === 1 ? $m[1] : '';
         $repository = new ApiKeyRepository($this->app->db());
         $auth = $key === '' ? null : $repository->authenticate($key);
         if ($auth === null) {

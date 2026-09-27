@@ -11,6 +11,18 @@ return [
     'allowed_min_ages' => [16, 18, 21],
     // Durée de validité par défaut d'une vérification (jours), réglable par projet.
     'default_validity_days' => 365,
+    // Validité par défaut d'un résultat NÉGATIF (âge non atteint), en heures, réglable par projet (0 à 720).
+    // Courte : sans date de naissance conservée, on ignore quand la personne atteindra l'âge requis.
+    // 0 : jamais réutilisé (chaque demande relance une vérification). Un échec technique n'est jamais réutilisé.
+    'default_negative_ttl_hours' => (int) env('VERIFICATION_NEGATIVE_TTL_HOURS', 24),
+    // Fenêtre (secondes) pendant laquelle un jeton de retour peut être émis après la fin de la session ;
+    // au-delà, le résultat reste affiché sans jeton (le client s'appuie sur le webhook ou l'API).
+    'return_token_window' => (int) env('VERIFICATION_RETURN_TOKEN_WINDOW', 600),
+    // Preuve renforcée : au-delà de ce nombre de codes erronés pour une adresse en 24 h, tous clients
+    // confondus (production), le code à 6 chiffres est remplacé par un lien à usage unique. Pas de blocage.
+    'global_code_failures' => (int) env('VERIFICATION_GLOBAL_CODE_FAILURES', 20),
+    // Validité du lien à usage unique (secondes).
+    'magic_link_ttl' => 900,
 
     // Contrôle de l'adresse e-mail : code à 6 chiffres.
     'email_code' => [

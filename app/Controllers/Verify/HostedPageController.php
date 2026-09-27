@@ -31,6 +31,7 @@ final class HostedPageController extends Controller
     private const NOTICES = [
         'code_sent' => ['module.notice.code_sent', 'info'],
         'code_generated' => ['module.notice.code_generated', 'info'],
+        'link_sent' => ['module.notice.link_sent', 'info'],
         VerificationService::CODE_INVALID => ['module.notice.code_invalid', 'error'],
         VerificationService::CODE_EXPIRED => ['module.notice.code_expired', 'error'],
         'code_resend_wait' => ['module.notice.code_resend_wait', 'error'],
@@ -51,6 +52,7 @@ final class HostedPageController extends Controller
         $status = $session->effectiveStatus($now);
         $data = [
             'pageTitle' => __('module.page.title'),
+            'stepTitle' => null,
             'project' => $project,
             'session' => $session,
             'embed' => $embed,
@@ -64,29 +66,41 @@ final class HostedPageController extends Controller
 
         if ($status !== VerificationSession::PENDING) {
             $result = $service->sessionResult($session);
-            $hasReturn = $session->returnUrl !== null;
+            // Jeton de retour : seulement dans la courte fenêtre qui suit la fin de la session.
+            $tokenAllowed = $service->canIssueReturnToken($session);
+            $hasReturn = $session->returnUrl !== null && $tokenAllowed;
 
             return $this->page('verify/result', [
                 ...$data,
+                'stepTitle' => __('module.steps.result'),
                 'result' => $result,
                 // Intégrée (modale, iframe, popup), la page ne navigue pas : le widget transmet le résultat.
                 'returnHref' => $hasReturn && $embed['mode'] === null ? '/s/' . $session->publicId . '/return' . $data['query'] : null,
+                // Rien pour revenir au site (popup, ou redirection sans return_url) : inviter à fermer.
+                'canClose' => $embed['mode'] === 'popup' || ($embed['mode'] === null && !$hasReturn),
                 // Données transmises à la page parente (widget) : jamais sans origine parente vérifiée.
                 'message' => $embed['origin'] !== null ? [
                     'source' => 'veriage',
                     'type' => $result['status'] === 'verified' ? 'completed' : 'failed',
                     'session_id' => $session->publicId,
-                    ...array_intersect_key($result, array_flip(['status', 'is_adult', 'verified_at', 'expires_at', 'method'])),
-                    'token' => $service->returnToken($project, $session),
+                    ...array_intersect_key($result, array_flip(['status', 'is_adult', 'min_age', 'verified_at', 'expires_at', 'method'])),
+                    'token' => $tokenAllowed ? $service->returnToken($project, $session) : null,
                 ] : null,
             ]);
         }
         if ($session->consentAt === null) {
-            return $this->page('verify/consent', $data);
+            return $this->page('verify/consent', [...$data, 'stepTitle' => __('module.steps.consent')]);
         }
         if ($session->emailVerifiedAt === null) {
-            return $this->page('verify/code', [
+            // Erreur de saisie : affichée au plus près du champ (aria-describedby, aria-invalid).
+            $fieldError = in_array($request->query('notice'), [VerificationService::CODE_INVALID, VerificationService::CODE_EXPIRED], true)
+                ? $data['notice'] : null;
+
+            return $this->page($session->proofKind === 'link' ? 'verify/link' : 'verify/code', [
                 ...$data,
+                'stepTitle' => __('module.steps.email'),
+                'notice' => $fieldError === null ? $data['notice'] : null,
+                'fieldError' => $fieldError,
                 'maskedEmail' => $service->maskedEmail($session),
                 'sandboxCode' => $service->sandboxCode($session),
                 'minutes' => intdiv((int) $this->app->config->get('verification.email_code.ttl'), 60),
@@ -95,11 +109,37 @@ final class HostedPageController extends Controller
         if ($request->query('shared') !== 'declined' && ($candidate = $service->sharedCandidate($project, $session)) !== null) {
             return $this->page('verify/shared', [
                 ...$data,
+                'stepTitle' => __('module.steps.method'),
                 'sharedVerifiedAt' => $this->app->formatter()->date(new \DateTimeImmutable((string) $candidate['verified_at'], new \DateTimeZone('UTC')), $locale),
             ]);
         }
 
-        return $this->page('verify/method', [...$data, 'methods' => $service->availableMethods($project, $session)]);
+        return $this->page('verify/method', [...$data, 'stepTitle' => __('module.steps.method'), 'methods' => $service->availableMethods($project, $session)]);
+    }
+
+    /**
+     * Lien à usage unique reçu par e-mail (preuve renforcée). Une page de confirmation en POST, et non
+     * une validation au GET : les scanners de liens des messageries ne consomment pas le lien.
+     */
+    public function confirm(Request $request): Response
+    {
+        [$project, $session] = $this->load($request);
+        $embed = $this->embed($request, $project);
+        $locale = $this->locale($request, $session);
+
+        return $this->page('verify/confirm', [
+            'pageTitle' => __('module.page.title'),
+            'stepTitle' => __('module.steps.email'),
+            'project' => $project,
+            'session' => $session,
+            'embed' => $embed,
+            'livemode' => $session->livemode,
+            'state' => $this->pageToken()->issue($session->publicId, time()),
+            'actionBase' => '/s/' . $session->publicId,
+            'query' => $this->stateQuery($embed, $locale),
+            'token' => preg_match('/^[A-Za-z0-9]{32}$/D', $request->query('token')) === 1 ? $request->query('token') : '',
+            'languageLinks' => [],
+        ]);
     }
 
     public function consent(Request $request): Response
@@ -110,7 +150,7 @@ final class HostedPageController extends Controller
         }
         $error = $service->consent($project, $session, $this->locale($request, $session), $request->ip());
 
-        return $this->back($request, $session, $error ?? ($session->livemode ? 'code_sent' : 'code_generated'));
+        return $this->back($request, $session, $error ?? $this->sentNotice($service->refresh($session)));
     }
 
     public function code(Request $request): Response
@@ -126,7 +166,16 @@ final class HostedPageController extends Controller
         [$project, $session, $service] = $this->loadForPost($request);
         $error = $service->sendCode($project, $session, $this->locale($request, $session), $request->ip());
 
-        return $this->back($request, $session, $error ?? ($session->livemode ? 'code_sent' : 'code_generated'));
+        return $this->back($request, $session, $error ?? $this->sentNotice($service->refresh($session)));
+    }
+
+    private function sentNotice(VerificationSession $session): string
+    {
+        return match (true) {
+            !$session->livemode => 'code_generated',
+            $session->proofKind === 'link' => 'link_sent',
+            default => 'code_sent',
+        };
     }
 
     public function shared(Request $request): Response

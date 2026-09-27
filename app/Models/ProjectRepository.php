@@ -33,15 +33,16 @@ final class ProjectRepository
         array $allowedOrigins,
         array $methods,
         bool $acceptShared,
+        int $negativeTtlHours = 24,
     ): array {
         $publicId = 'prj_' . Crypto::randomAlnum(20);
         $secrets = ['test' => self::newSecret(), 'live' => self::newSecret()];
         $id = $this->db->insert(
-            'INSERT INTO projects (public_id, account_id, name, min_age, validity_days, allowed_origins, methods, accept_shared, '
-            . 'email_salt, signing_secret_test_enc, signing_secret_live_enc, created_at, updated_at) '
-            . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())',
+            'INSERT INTO projects (public_id, account_id, name, min_age, validity_days, negative_ttl_hours, allowed_origins, methods, '
+            . 'accept_shared, email_salt, signing_secret_test_enc, signing_secret_live_enc, created_at, updated_at) '
+            . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())',
             [
-                $publicId, $accountId, $name, $minAge, $validityDays,
+                $publicId, $accountId, $name, $minAge, $validityDays, $negativeTtlHours,
                 json_encode(array_values($allowedOrigins), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
                 json_encode(array_values($methods), JSON_THROW_ON_ERROR),
                 $acceptShared ? 1 : 0,
@@ -52,6 +53,11 @@ final class ProjectRepository
         );
 
         return [$this->findById($id) ?? throw new \RuntimeException('Projet introuvable après création.'), $secrets];
+    }
+
+    public function updateNegativeTtl(int $id, int $hours): void
+    {
+        $this->db->execute('UPDATE projects SET negative_ttl_hours = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?', [$hours, $id]);
     }
 
     public function findById(int $id): ?Project

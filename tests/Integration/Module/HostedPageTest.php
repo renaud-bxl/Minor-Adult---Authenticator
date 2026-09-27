@@ -308,13 +308,36 @@ final class HostedPageTest extends ModuleTestCase
         $page = $client->get('/s/' . $id);
         $client->post('/s/' . $id . '/consent', ['_state' => self::state($page), 'consent' => '1']);
         $page = $client->get('/s/' . $id);
+        self::assertGreaterThanOrEqual(300, $max, 'seuil adapté à la CGNAT (arbitrage Q3)');
         for ($i = 0; $i < $max; $i++) {
-            $this->app->rateLimiter()->attempt('verify_code_ip', '198.51.100.77', $max, 3600);
+            $this->app->rateLimiter()->attempt('verify_code_ip', '198.51.100.77|' . $p['project']->id, $max, 3600);
         }
         $response = $client->post('/s/' . $id . '/code', ['_state' => self::state($page), 'code' => self::code($page)]);
         self::assertStringContainsString('notice=throttled', (string) $response->header('Location'));
         self::assertNull($this->app->db()->fetchOne('SELECT email_verified_at FROM verification_sessions WHERE public_id = ?', [$id])['email_verified_at']);
         self::assertSame(0, (int) $this->app->db()->fetchOne('SELECT code_attempts FROM verification_sessions WHERE public_id = ?', [$id])['code_attempts'], 'aucun essai de la session consommé');
+
+        // Clé (IP, projet) : la même IP (CGNAT) garde son quota chez un autre client.
+        $other = $this->createProject(['https://other.example'], name: 'Other');
+        $otherId = $this->newSession($other['keys']['test'])['session_id'];
+        $page = $client->get('/s/' . $otherId);
+        $client->post('/s/' . $otherId . '/consent', ['_state' => self::state($page), 'consent' => '1']);
+        $page = $client->get('/s/' . $otherId);
+        $client->post('/s/' . $otherId . '/code', ['_state' => self::state($page), 'code' => self::code($page)]);
+        self::assertNotNull($this->app->db()->fetchOne('SELECT email_verified_at FROM verification_sessions WHERE public_id = ?', [$otherId])['email_verified_at']);
+    }
+
+    public function testLimitsAreReadFromTheEnvironment(): void
+    {
+        $config = require dirname(__DIR__, 3) . '/config/security.php';
+        self::assertSame([300, 3600], $config['rate_limits']['verify_code_ip']);
+        self::assertSame([600, 60], $config['rate_limits']['verify_page_ip']);
+        $_ENV['RATE_VERIFY_CODE_IP_PER_HOUR'] = '500';
+        try {
+            self::assertSame([500, 3600], (require dirname(__DIR__, 3) . '/config/security.php')['rate_limits']['verify_code_ip']);
+        } finally {
+            unset($_ENV['RATE_VERIFY_CODE_IP_PER_HOUR']);
+        }
     }
 
     private function flowUntilAfterCode(string $sessionId): \App\Core\Response

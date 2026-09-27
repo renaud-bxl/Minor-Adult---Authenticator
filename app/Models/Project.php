@@ -27,6 +27,8 @@ final class Project
         public readonly string $emailSalt,
         public readonly string $signingSecretTestEnc,
         public readonly string $signingSecretLiveEnc,
+        /** Validité d'un résultat négatif (âge non atteint), en heures ; 0 : jamais réutilisé. */
+        public readonly int $negativeTtlHours = 24,
     ) {
     }
 
@@ -46,6 +48,7 @@ final class Project
             (string) $row['email_salt'],
             (string) $row['signing_secret_test_enc'],
             (string) $row['signing_secret_live_enc'],
+            (int) ($row['negative_ttl_hours'] ?? 24),
         );
     }
 

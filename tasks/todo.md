@@ -99,9 +99,10 @@ Preuves : `vendor/bin/phpunit` → OK (après corrections de l'audit : 168 tests
 
 ---
 
-## Phase 2 : API et module  ← IMPLÉMENTÉE (créateur, 2026-09-27), en attente de contrôle et d'audit
+## Phase 2 : API et module  ← REJETÉE par le critique (3 exigences) puis CORRIGÉE (créateur, 2026-09-27), en attente de ré-audit
 Preuves : `vendor/bin/phpunit` → OK (après contrôle : 250 tests, 1 491 assertions ; unit 156, intégration 94) ; `php tools/check_translations.php` → 100 % fr et en (265 clés, 0 inconnue) ;
 `python3 tools/e2e_demo.py` → 20/20 contrôles (Chromium réel, 4 modes du widget) ; cURL dans `docs/api-tests.md` (section Phase 2) ; captures dans `docs/screenshots/phase-2/` (29 fichiers).
+Après corrections de l'audit (suivi : `tasks/reviews/phase-2-critique-suivi.md`) : `vendor/bin/phpunit` → OK (261 tests, 1 611 assertions) ; traductions 100 % (285 clés) ; E2E 33/33 ; captures 32 fichiers.
 Dépendance ajoutée : `firebase/php-jwt` **7.2** (autorisée par CLAUDE.md ; la 6.x est visée par l'avis CVE-2025-45769, `composer audit` : aucun avis).
 
 ### 2.1 Données et routage
@@ -143,8 +144,16 @@ Dépendance ajoutée : `firebase/php-jwt` **7.2** (autorisée par CLAUDE.md ; la
 - [x] Purge par cron (`cron/purge.php`, `deploy/crontab`) : sessions expirées puis supprimées (30 j), vérifications expirées, livraisons terminées (30 j), audit (365 j, `AUDIT_RETENTION_DAYS`), jetons expirés/utilisés, comptes jamais validés (7 j, R2). Preuve : `OperationsTest::testPurgeAppliesRetentionRules`.
 - [x] Ré-audit 18 (contexte insensible aux accents), 19 (répétition avec séparateurs), 20 (entrées `$hex[…]` retirées : 55 739 entrées), 22 (problèmes de configuration listés sur STDERR en CLI). Preuves : `PasswordPolicyTest` (3 tests ajoutés), cURL §13. Reco 21 (AllowOverride) : phase 0.
 
+### 2.7 Corrections de l'audit critique (2026-09-27)
+- [x] E1 : résultat négatif valable 24 h par défaut (réglable par projet, 0 à 720 h ; 0 : jamais réutilisé), y compris pour la copie partagée ; échec technique jamais réutilisé. Preuve : `ReauditTest` (4 tests), cURL.
+- [x] E2 : modale accessible au clavier (piège de focus, `inert`, Échap depuis l'iframe par `postMessage`, focus restauré). Preuve : E2E (7 contrôles).
+- [x] E3 : mode iframe sur mobile présenté en superposition `embed=modal`, un seul bouton de fermeture. Preuve : E2E.
+- [x] Arbitrages : lien à usage unique au-delà de 20 codes erronés par adresse en 24 h (tous clients, alerte d'audit) ; jeton de retour émis 10 min après la fin, `jti` consommé une fois et session rattachée au visiteur dans la démo ; limites (IP, projet) lues dans `.env` (300/h, 100/h, 600/min).
+- [x] `docs/integration.md` (FR + EN), `docs/rgpd.md` (squelette ⚖️), `min_age` en consultation + `POST /api/v1/verifications/lookup`, `Bearer` insensible à la casse, accessibilité de la page (erreur reliée au champ, états des étapes, titres), popup qui reste ouvert.
+- [ ] Reportés : R7 (partiel), R11, R15 (phase 5), R16 (phase 10), R18 (phases 0 et 3) ; voir le suivi.
+
 ### Limites connues (phase 2)
-- [ ] ⚖️ Textes d'information et de consentement (`module.consent.*`) et case de réutilisation entre sites : relecture juridique (base légale art. 9.2.a, durée de conservation, droits).
+- [ ] ⚖️ Textes d'information et de consentement (`module.consent.*`) et case de réutilisation entre sites : relecture juridique (base légale art. 9.2.a, durée de conservation, droits). Points listés dans `docs/rgpd.md`.
 - [ ] Aucune méthode réelle en production avant les phases 3 et 4 : une session `sk_live_` affiche « aucune méthode disponible ». La bascule `escalate` (eID en popup) est codée mais ne sera exercée qu'avec l'eID (phase 4).
 - [ ] `GET /api/v1/verifications?email=` (contrat du cahier des charges) : l'adresse passe dans l'URL → journaux d'accès du serveur à configurer sans chaîne de requête (phase 0).
 - [x] ~~Clé d'idempotence~~ (contrôleur) : en-tête `Idempotency-Key` sur `POST /api/v1/sessions` (24 h, par projet et mode, réponse rejouée + `Idempotent-Replayed`, 422 si autre corps, 409 si en cours, aucune adresse en Redis). Preuve : `SessionApiTest::testIdempotencyKeyReplaysTheSameSession`, cURL §14.

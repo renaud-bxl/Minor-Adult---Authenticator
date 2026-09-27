@@ -66,15 +66,16 @@ final class VerificationSessionRepository
     }
 
     /** Enregistre un nouveau code (haché) ; refusé si le quota d'envois est atteint ou trop rapproché. */
-    public function storeCode(int $id, string $codeHash, int $ttl, int $maxSends, int $minInterval): bool
+    /** @param string $kind « code » (6 chiffres) ou « link » (lien à usage unique) */
+    public function storeCode(int $id, string $codeHash, int $ttl, int $maxSends, int $minInterval, string $kind = 'code'): bool
     {
         return $this->db->execute(
             "UPDATE verification_sessions SET code_hash = ?, code_expires_at = UTC_TIMESTAMP() + INTERVAL ? SECOND, "
-            . "code_sends = code_sends + 1, code_sent_at = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP() "
+            . "code_sends = code_sends + 1, code_sent_at = UTC_TIMESTAMP(), proof_kind = ?, updated_at = UTC_TIMESTAMP() "
             . "WHERE id = ? AND status = 'pending' AND consent_at IS NOT NULL AND email_verified_at IS NULL "
             . "AND expires_at > UTC_TIMESTAMP() AND code_sends < ? "
             . "AND (code_sent_at IS NULL OR code_sent_at <= UTC_TIMESTAMP() - INTERVAL ? SECOND)",
-            [$codeHash, $ttl, $id, $maxSends, $minInterval],
+            [$codeHash, $ttl, $kind, $id, $maxSends, $minInterval],
         ) === 1;
     }
 

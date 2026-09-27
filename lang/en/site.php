@@ -152,4 +152,7 @@ return [
     'demo.token_claims' => 'Token content',
     'demo.webhooks_pending' => 'No webhook received yet (is the worker running?).',
     'demo.back' => 'Back to the demo',
+
+    'demo.token_replayed' => 'This return token has already been used: the shop accepts each token only once (replay protection).',
+    'demo.owner_mismatch' => 'This verification was not started from this browser: the shop does not assign it to this visitor.',
 ];

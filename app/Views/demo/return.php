@@ -7,6 +7,7 @@ declare(strict_types=1);
  *
  * @var string                     $sessionId
  * @var array<string, mixed>|null  $claims
+ * @var string|null                $problem  token_replayed (jti déjà consommé) | owner_mismatch
  * @var array<string, mixed>|null  $api
  * @var list<array<string, mixed>> $webhooks
  */
@@ -16,7 +17,11 @@ $adult = $claims !== null && ($claims['is_adult'] ?? false) === true;
 <section class="shop-product demo-return">
     <h1><?= e(__('site.demo.return_title')) ?></h1>
 <?php if ($claims === null): ?>
-    <div class="notice notice-warning" role="alert"><p><?= e(__('site.demo.token_invalid')) ?></p></div>
+    <div class="notice notice-warning" role="alert" data-return-problem="<?= e($problem ?? 'token_invalid') ?>"><p><?= e(__(match ($problem ?? null) {
+        'token_replayed' => 'site.demo.token_replayed',
+        'owner_mismatch' => 'site.demo.owner_mismatch',
+        default => 'site.demo.token_invalid',
+    })) ?></p></div>
 <?php else: ?>
     <div class="notice <?= $adult ? 'notice-success' : 'notice-warning' ?>" role="status" data-return-status="<?= e((string) ($claims['status'] ?? '')) ?>">
         <p><strong><?= e($adult ? __('site.demo.return_adult') : __('site.demo.return_not_adult')) ?></strong></p>

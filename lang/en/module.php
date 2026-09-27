@@ -87,4 +87,21 @@ return [
     'notice.consent_required' => 'Tick the consent box to continue.',
     'notice.method_invalid' => 'This method is not available or the information entered is invalid.',
     'notice.shared_unavailable' => 'This verification can no longer be reused. Choose a method.',
+
+    'steps.state_done' => '(step completed)',
+    'steps.state_current' => '(current step)',
+    'steps.state_todo' => '(upcoming step)',
+
+    'link.title' => 'Confirm your address with the link we sent',
+    'link.intro' => 'We sent a single-use confirmation link to {email}. Open it, confirm, then come back to this page.',
+    'link.why' => 'For security, a link exceptionally replaces the code for this address.',
+    'link.continue' => 'I have confirmed my address, continue',
+    'link.resend' => 'send a new link',
+    'link.confirm_title' => 'Confirm your email address',
+    'link.confirm_intro' => 'Click the button to confirm that this address belongs to you, then return to the verification page.',
+    'link.confirm_submit' => 'Confirm my address',
+
+    'result.failed_code_text' => 'Too many incorrect codes were entered: for security, this verification has been stopped. You can start a new one from {project}.',
+    'result.can_close' => 'You can now close this page.',
+    'notice.link_sent' => 'A confirmation link has just been sent to your email address.',
 ];

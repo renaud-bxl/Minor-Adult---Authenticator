@@ -13,7 +13,11 @@ $reached = true;
 ?>
 <ol class="verify-steps" aria-label="<?= e(__('module.steps.label')) ?>">
 <?php foreach ($steps as $key => $label): ?>
-    <li class="<?= $key === $current ? 'is-current' : ($reached ? 'is-done' : '') ?>"<?= $key === $current ? ' aria-current="step"' : '' ?>><span><?= e($label) ?></span></li>
+<?php $state = $key === $current ? 'current' : ($reached ? 'done' : 'todo'); ?>
+    <li class="is-<?= e($state) ?>"<?= $key === $current ? ' aria-current="step"' : '' ?>>
+        <span><?php if ($state === 'done'): ?><span class="step-check" aria-hidden="true">✓ </span><?php endif; ?><?= e($label) ?></span>
+        <span class="visually-hidden"><?= e(__($state === 'done' ? 'module.steps.state_done' : ($state === 'current' ? 'module.steps.state_current' : 'module.steps.state_todo'))) ?></span>
+    </li>
 <?php if ($key === $current) { $reached = false; } ?>
 <?php endforeach; ?>
 </ol>

@@ -10,6 +10,7 @@ use App\Core\Application;
 use App\Core\Crypto;
 use App\Core\Database;
 use App\Core\IpAddress;
+use App\Core\Logger;
 use App\Core\RateLimiter;
 use App\Core\TextInput;
 use App\Models\AuditLog;
@@ -52,7 +53,9 @@ final class VerificationService
     /** Clé d'idempotence : caractères sûrs, 255 au plus (UUID conseillé) ; conservée 24 h. */
     private const IDEMPOTENCY_KEY_PATTERN = '/^[A-Za-z0-9_.:\-]{1,255}$/D';
     private const IDEMPOTENCY_TTL = 86400;
-    private const RATE_LIMITS = ['api_session_email', 'verify_code_send_ip', 'verify_code_ip', 'verify_code_email'];
+    private const RATE_LIMITS = ['api_session_email', 'verify_code_send_ip', 'verify_code_ip', 'verify_code_email', 'verify_code_global'];
+    /** Jeton du lien à usage unique (preuve renforcée) : 32 caractères base 62, ≈ 190 bits. */
+    private const LINK_TOKEN_PATTERN = '/^[A-Za-z0-9]{32}$/D';
 
     /**
      * @param array<string, mixed>          $config  section « verification » de la configuration
@@ -82,6 +85,7 @@ final class VerificationService
         private readonly string $timezone,
         /** @var array<string, array{0: int, 1: int}> limites nommées (voir fromApplication) */
         private readonly array $rateLimits,
+        private readonly ?Logger $logger = null,
     ) {
     }
 
@@ -116,6 +120,7 @@ final class VerificationService
             (string) $app->config->get('app.verify_url'),
             (string) $app->config->get('app.timezone'),
             array_combine(self::RATE_LIMITS, array_map($app->rateLimit(...), self::RATE_LIMITS)),
+            $app->logger(),
         );
     }
 
@@ -268,13 +273,22 @@ final class VerificationService
      *
      * @return array<string, mixed>
      */
-    public function status(ApiContext $ctx, string $rawEmail): array
+    public function status(ApiContext $ctx, string $rawEmail, mixed $minAge = null): array
     {
         $email = $this->requireEmail($rawEmail);
+        /** @var list<int> $allowedAges */
+        $allowedAges = $this->config['allowed_min_ages'];
+        if ($minAge !== null && (!is_int($minAge) || !in_array($minAge, $allowedAges, true))) {
+            throw new ApiException(422, 'validation_failed', ['min_age' => 'invalid']);
+        }
         $emailHash = $this->emailHash($ctx->project, $email);
         $base = ['object' => 'verification', 'email' => $email, 'livemode' => $ctx->livemode];
 
         $verification = $this->verifications->findValid($ctx->project->id, $ctx->livemode, $emailHash);
+        // Âge demandé : un résultat qui ne permet pas de conclure pour cet âge vaut « not_verified ».
+        if ($verification !== null && $minAge !== null && !self::covers($verification, $minAge)) {
+            $verification = null;
+        }
         if ($verification !== null) {
             return [
                 ...$base,
@@ -377,10 +391,13 @@ final class VerificationService
         if ($session->codeSends >= $cfg['max_sends']) {
             return 'code_send_limit';
         }
-        // Anti-bombardement d'e-mails par IP (la sandbox n'envoie aucun e-mail).
+        // Anti-bombardement d'e-mails par (IP, projet) (la sandbox n'envoie aucun e-mail).
         [$max, $window] = $this->rateLimits['verify_code_send_ip'];
-        if ($session->livemode && !$this->limiter->attempt('verify_code_send_ip', IpAddress::rateLimitKey($ip), $max, $window)->allowed) {
+        if ($session->livemode && !$this->limiter->attempt('verify_code_send_ip', $this->ipProjectKey($ip, $project), $max, $window)->allowed) {
             return 'throttled';
+        }
+        if ($session->livemode && $this->needsStrongProof($session)) {
+            return $this->sendLink($project, $session, $locale, $ip);
         }
         $code = Crypto::randomDigits(6);
         if (!$this->sessions->storeCode($session->id, $this->codeHash($session, $code), $cfg['ttl'], $cfg['max_sends'], $cfg['resend_interval'])) {
@@ -398,6 +415,45 @@ final class VerificationService
         $projectName = $project->name;
         ($this->defer)(fn () => $this->mail->send($email, 'emails.verification_code.subject', 'verification_code', [
             'code' => $code,
+            'minutes' => $minutes,
+            'project' => $projectName,
+        ], $locale));
+
+        return null;
+    }
+
+    /**
+     * Preuve renforcée : l'adresse cumule trop de codes erronés en 24 h, tous clients confondus
+     * (tentative probable d'appropriation d'une vérification). Pas de blocage (un tiers pourrait
+     * sinon priver l'adresse de toute vérification) : un lien à usage unique à forte entropie remplace
+     * le code, impossible à deviner.
+     */
+    private function needsStrongProof(VerificationSession $session): bool
+    {
+        [$max, $window] = $this->rateLimits['verify_code_global'];
+
+        return !$this->limiter->peek('verify_code_global', $this->sharedHash($this->sessionEmail($session)), $max, $window)->allowed;
+    }
+
+    private function sendLink(Project $project, VerificationSession $session, string $locale, string $ip): ?string
+    {
+        /** @var array{max_sends: int, resend_interval: int} $cfg */
+        $cfg = $this->config['email_code'];
+        $token = Crypto::randomAlnum(32);
+        $ttl = (int) $this->config['magic_link_ttl'];
+        if (!$this->sessions->storeCode($session->id, $this->codeHash($session, $token), $ttl, $cfg['max_sends'], $cfg['resend_interval'], 'link')) {
+            return 'code_resend_wait';
+        }
+        $this->audit->record('verification.proof_escalated', null, $project->accountId, $ip, $project->id, [
+            'session' => $session->publicId, 'livemode' => $session->livemode, 'reason' => 'global_code_failures',
+        ]);
+        $this->logger?->warning('verification_proof_escalated', ['project' => $project->id]);
+        $email = $this->sessionEmail($session);
+        $url = $this->verifyUrl . '/s/' . $session->publicId . '/confirm?' . http_build_query(['token' => $token, 'lang' => $locale], '', '&', PHP_QUERY_RFC3986);
+        $minutes = intdiv($ttl, 60);
+        $projectName = $project->name;
+        ($this->defer)(fn () => $this->mail->send($email, 'emails.verification_link.subject', 'verification_link', [
+            'url' => $url,
             'minutes' => $minutes,
             'project' => $projectName,
         ], $locale));
@@ -429,11 +485,12 @@ final class VerificationService
         /** @var array{max_attempts: int} $cfg */
         $cfg = $this->config['email_code'];
         [$ipMax, $ipWindow] = $this->rateLimits['verify_code_ip'];
-        if (!$this->limiter->attempt('verify_code_ip', IpAddress::rateLimitKey($ip), $ipMax, $ipWindow)->allowed) {
+        if (!$this->limiter->attempt('verify_code_ip', $this->ipProjectKey($ip, $project), $ipMax, $ipWindow)->allowed) {
             return self::CODE_THROTTLED;
         }
         $code = (string) preg_replace('/\s+/', '', $rawCode);
-        if (preg_match('/^\d{6}$/D', $code) === 1
+        $format = $session->proofKind === 'link' ? self::LINK_TOKEN_PATTERN : '/^\d{6}$/D';
+        if (preg_match($format, $code) === 1
             && $this->sessions->attemptCode($session->id, $this->codeHash($session, $code), $cfg['max_attempts'])) {
             $this->redis->del([$this->sandboxCodeKey($session)]);
             $this->audit->record('verification.email_confirmed', null, $project->accountId, $ip, $project->id, [
@@ -453,6 +510,11 @@ final class VerificationService
         $session = $this->refresh($session);
         if (!$session->isOpen($this->now()) || $session->emailVerifiedAt !== null) {
             return self::CODE_INVALID;
+        }
+        if ($session->livemode) {
+            // Compteur global de l'adresse (tous clients) : déclenche la preuve renforcée, jamais un blocage.
+            [$globalMax, $globalWindow] = $this->rateLimits['verify_code_global'];
+            $this->limiter->attempt('verify_code_global', $this->sharedHash($this->sessionEmail($session)), $globalMax, $globalWindow);
         }
         [$emailMax, $emailWindow] = $this->rateLimits['verify_code_email'];
         $perEmail = $this->limiter->attempt('verify_code_email', $this->scopeKey($project, $session->livemode, $session->emailHash), $emailMax, $emailWindow);
@@ -481,7 +543,7 @@ final class VerificationService
         }
         // Sandbox : entre projets d'un même compte seulement (le code y est affiché, l'adresse n'est pas prouvée).
         $candidate = $this->verifications->findShared($this->sharedHash($this->sessionEmail($session)), $session->livemode, $project->id,
-            $session->livemode ? null : $project->accountId);
+            $session->livemode ? null : $project->accountId, $session->minAge);
 
         return $candidate !== null && self::covers($candidate, $session->minAge) ? $candidate : null;
     }
@@ -493,7 +555,7 @@ final class VerificationService
         if ($candidate === null) {
             return false;
         }
-        $expires = min($this->utc((string) $candidate['expires_at']), $this->now()->modify('+' . $project->validityDays . ' days'));
+        $expires = min($this->utc((string) $candidate['expires_at']), $this->resultExpiry($project, (bool) $candidate['is_adult'], $this->now()));
 
         return $this->complete($project, $session, (string) $candidate['method'], 'shared', (bool) $candidate['is_adult'],
             $this->utc((string) $candidate['verified_at']), $expires, null, 'shared', $ip);
@@ -523,7 +585,20 @@ final class VerificationService
         $now = $this->now();
         $sharedHash = $shareOptIn ? $this->sharedHash($this->sessionEmail($session)) : null;
         $this->complete($project, $session, $method->id(), 'none', (bool) $outcome->isAdult, $now,
-            $now->modify('+' . $project->validityDays . ' days'), $sharedHash, null, $ip);
+            $this->resultExpiry($project, (bool) $outcome->isAdult, $now), $sharedHash, null, $ip);
+    }
+
+    /**
+     * Expiration d'un résultat : validité du projet (jours) s'il est positif ; durée courte (heures,
+     * réglable par projet) s'il est négatif, pour que la personne puisse se faire revérifier une fois
+     * l'âge atteint (la date de naissance n'est jamais conservée). 0 heure : aussitôt expiré, donc
+     * jamais réutilisé.
+     */
+    public function resultExpiry(Project $project, bool $isAdult, \DateTimeImmutable $from): \DateTimeImmutable
+    {
+        return $isAdult
+            ? $from->modify('+' . $project->validityDays . ' days')
+            : $from->modify('+' . max(0, $project->negativeTtlHours) . ' hours');
     }
 
     /** @return list<VerificationMethodInterface> */
@@ -558,10 +633,27 @@ final class VerificationService
         ];
     }
 
-    /** URL de retour « return_url?session_id=…&token=… » (jeton frais), ou null sans return_url. */
+    /**
+     * Un jeton de retour n'est émis que pendant une courte fenêtre après la fin de la session
+     * (VERIFICATION_RETURN_TOKEN_WINDOW, 10 min par défaut) ; au-delà, le résultat est affiché sans
+     * jeton. Le jeton reste réutilisable dans sa durée de vie : au client de consommer chaque « jti »
+     * une seule fois et de rattacher « sub » à l'utilisateur qui a créé la session.
+     */
+    public function canIssueReturnToken(VerificationSession $session): bool
+    {
+        $now = $this->now();
+        if ($session->effectiveStatus($now) === VerificationSession::PENDING) {
+            return false;
+        }
+        $end = $session->completedAt ?? $session->expiresAt;
+
+        return $end->modify('+' . (int) $this->config['return_token_window'] . ' seconds') >= $now;
+    }
+
+    /** URL de retour « return_url?session_id=…&token=… » (jeton frais), ou null (pas de return_url, fenêtre close). */
     public function returnUrl(Project $project, VerificationSession $session): ?string
     {
-        if ($session->returnUrl === null) {
+        if ($session->returnUrl === null || !$this->canIssueReturnToken($session)) {
             return null;
         }
 
@@ -801,6 +893,12 @@ final class VerificationService
     private function sharedHash(string $email): string
     {
         return $this->crypto->hashEmail($email, self::SHARED_SALT);
+    }
+
+    /** Clé de limitation (IP /64 en IPv6, projet) : une IP partagée (CGNAT) n'épuise pas le quota des autres clients. */
+    private function ipProjectKey(string $ip, Project $project): string
+    {
+        return IpAddress::rateLimitKey($ip) . '|' . $project->id;
     }
 
     private function scopeKey(Project $project, bool $livemode, string $emailHash): string

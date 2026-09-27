@@ -154,4 +154,7 @@ return [
     'demo.token_claims' => 'Contenu du jeton',
     'demo.webhooks_pending' => 'Aucun webhook reçu pour l’instant (le worker est-il démarré ?).',
     'demo.back' => 'Revenir à la démonstration',
+
+    'demo.token_replayed' => 'Ce jeton de retour a déjà été utilisé : la boutique n’accepte chaque jeton qu’une seule fois (anti-rejeu).',
+    'demo.owner_mismatch' => 'Cette vérification n’a pas été lancée depuis ce navigateur : la boutique ne l’attribue pas à ce visiteur.',
 ];

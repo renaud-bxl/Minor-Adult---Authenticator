@@ -60,6 +60,7 @@ return static function (Router $router): void {
             $router->group('', [AuthenticateApiKey::class], static function (Router $router): void {
                 $router->post('/sessions', [SessionController::class, 'store']);
                 $router->get('/verifications', [VerificationController::class, 'show']);
+                $router->post('/verifications/lookup', [VerificationController::class, 'lookup']);
                 $router->delete('/verifications', [VerificationController::class, 'destroy']);
             });
         });
@@ -67,6 +68,7 @@ return static function (Router $router): void {
         $router->group('/s/{session:' . VerificationSession::ROUTE_PATTERN . '}', [ThrottleVerifyPage::class], static function (Router $router): void {
             $router->get('/', [HostedPageController::class, 'show']);
             $router->get('/return', [HostedPageController::class, 'returnToClient']);
+            $router->get('/confirm', [HostedPageController::class, 'confirm']);
             $router->post('/consent', [HostedPageController::class, 'consent']);
             $router->post('/code', [HostedPageController::class, 'code']);
             $router->post('/code/resend', [HostedPageController::class, 'resendCode']);

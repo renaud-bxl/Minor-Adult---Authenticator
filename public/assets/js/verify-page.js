@@ -60,6 +60,16 @@
 
     send({ type: 'ready' });
 
+    // Modale : Échap ferme aussi quand le focus est dans le cadre (le document parent, d'une autre
+    // origine, ne reçoit pas ces touches). Le widget ne l'accepte que de ce cadre et de cette origine.
+    if (mode === 'modal') {
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                send({ type: 'close' });
+            }
+        });
+    }
+
     var result = document.getElementById('veriage-result');
     if (result) {
         try {

@@ -7,6 +7,7 @@ declare(strict_types=1);
  *
  * @var string                                     $content
  * @var string|null                                $pageTitle
+ * @var string|null                                $stepTitle  étape courante (titre propre à chaque page, WCAG 2.4.2)
  * @var \App\Models\Project|null                   $project
  * @var array{mode: ?string, origin: ?string}|null $embed
  * @var bool|null                                  $livemode
@@ -23,7 +24,7 @@ $embed = $embed ?? ['mode' => null, 'origin' => null];
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><?= e(($pageTitle ?? '') !== '' ? $pageTitle . ' · ' . $appName : $appName) ?></title>
+    <title><?= e(implode(' · ', array_filter([$stepTitle ?? null, $pageTitle ?? null, $appName]))) ?></title>
     <meta name="robots" content="noindex, nofollow">
     <meta name="color-scheme" content="light dark">
     <link rel="icon" href="<?= e(asset('img/favicon.svg')) ?>" type="image/svg+xml">

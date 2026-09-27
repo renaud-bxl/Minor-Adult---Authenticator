@@ -37,4 +37,9 @@ return [
     'verification_code.expiry' => 'Ce code est valable {minutes} minutes.',
     'verification_code.never_share' => 'Ne communiquez ce code à personne : nous ne vous le demanderons jamais par téléphone ou par message.',
     'verification_code.ignore' => 'Si vous n’êtes pas à l’origine de cette demande, ignorez cet e-mail : aucune vérification n’aura lieu sans ce code.',
+
+    'verification_link.subject' => 'Confirmez votre adresse e-mail',
+    'verification_link.intro' => '{project} vous demande de vérifier votre âge avec {app}. Par sécurité, confirmez votre adresse e-mail avec ce lien à usage unique :',
+    'verification_link.action' => 'Confirmer mon adresse',
+    'verification_link.expiry' => 'Ce lien est valable {minutes} minutes et ne peut servir qu’une seule fois.',
 ];

@@ -9,12 +9,14 @@ declare(strict_types=1);
  * @var array<string, mixed>      $result
  * @var string|null               $returnHref
  * @var array<string, mixed>|null $message
+ * @var bool|null                 $canClose aucun retour possible vers le site : inviter à fermer la page
  */
 $status = (string) $result['status'];
 [$titleKey, $textKey, $tone] = match (true) {
     $status === 'verified' && $result['is_adult'] === true => ['module.result.verified_title', 'module.result.verified_text', 'success'],
     $status === 'verified' => ['module.result.minor_title', 'module.result.minor_text', 'warning'],
     $status === 'expired' => ['module.result.expired_title', 'module.result.expired_text', 'neutral'],
+    $result['failure_reason'] === 'code_attempts_exceeded' => ['module.result.failed_title', 'module.result.failed_code_text', 'error'],
     default => ['module.result.failed_title', 'module.result.failed_text', 'error'],
 };
 ?>
@@ -27,6 +29,9 @@ $status = (string) $result['status'];
     <p class="muted"><?= e(__('module.result.reused')) ?></p>
 <?php endif; ?>
 
+<?php if (!empty($canClose)): ?>
+    <p class="muted" data-can-close><?= e(__('module.result.can_close')) ?></p>
+<?php endif; ?>
     <div class="actions actions-stack">
 <?php if ($returnHref !== null): ?>
         <a class="button button-block" href="<?= e($returnHref) ?>" data-veriage-return><?= e(__('module.result.return', ['project' => $project->name])) ?></a>

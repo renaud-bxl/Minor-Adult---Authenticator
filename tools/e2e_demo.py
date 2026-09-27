@@ -163,6 +163,11 @@ def main() -> int:
         status = run_hosted_flow(popup, "fail")
         check("popup : statut failed", status == "failed")
         page.wait_for_selector("#log-events li[data-event='veriage:failed']")
+        time.sleep(2)
+        check("popup : reste ouvert après le résultat (le temps de le lire)", not popup.is_closed())
+        check("popup : invitation à fermer la fenêtre", popup.query_selector("[data-can-close]") is not None)
+        shot(popup, out, "popup-resultat-echec-fr")
+        popup.click(".actions-stack [data-veriage-close]")
         wait_confirmation(page, "failed", False)
         page.wait_for_selector("#log-events li[data-event='veriage:closed']", timeout=10000)
         shot(page, out, "demo-6-popup-echec-fr")
@@ -180,9 +185,15 @@ def main() -> int:
         page.click("[data-veriage-return]")
         page.wait_for_url("**/demo/return?session_id=*")
         check("retour : jeton vérifié par la boutique", page.get_attribute("[data-return-status]", "data-return-status") == "verified")
-        time.sleep(2)
-        page.reload(wait_until="networkidle")
         shot(page, out, "demo-7-retour-jeton-verifie-fr")
+        page.reload(wait_until="networkidle")
+        check("retour : jeton rejoué refusé (jti consommé une fois)", page.get_attribute("[data-return-problem]", "data-return-problem") == "token_replayed")
+        shot(page, out, "demo-7b-retour-jeton-rejoue-fr")
+        stranger = context(browser)
+        other = stranger.new_page()
+        other.goto(page.url, wait_until="networkidle")
+        check("retour : session d'un autre visiteur refusée", other.get_attribute("[data-return-problem]", "data-return-problem") == "owner_mismatch")
+        stranger.close()
         ctx.close()
 
         # 5. Réutilisation (même client) : nouvelle session pour l'adresse déjà vérifiée → résultat immédiat.
@@ -218,7 +229,51 @@ def main() -> int:
         shot(page, out, "demo-9-modale-plein-ecran-mobile-fr", full_page=False)
         ctx.close()
 
-        # 7. Sécurité : la page hébergée refuse d'être cadrée par un domaine non autorisé (CSP).
+        # 7. Accessibilité clavier de la modale (WCAG 2.4.3 / motif « dialog » de l'APG).
+        print("Accessibilité : modale au clavier")
+        ctx = context(browser)
+        page = ctx.new_page()
+        create_session(page, args.demo, "fr", "modal", f"kim+{stamp}@example.com")
+        page.focus("#demo-open")
+        page.keyboard.press("Enter")
+        frame = page.wait_for_selector("iframe[src*='/s/vs_']").content_frame()
+        frame.wait_for_selector("input[name=consent]")
+        check("modale : role=dialog, aria-modal, nom accessible",
+              page.eval_on_selector("[role=dialog]", "d => d.getAttribute('aria-modal') === 'true' && d.getAttribute('aria-label') !== ''"))
+        check("modale : reste de la page inerte", page.eval_on_selector(".shop-main", "m => m.inert === true && m.getAttribute('aria-hidden') === 'true'"))
+        inside = []
+        for _ in range(30):
+            page.keyboard.press("Tab")
+            inside.append(page.evaluate("() => { const d = document.querySelector('[role=dialog]'); return !!d && d.contains(document.activeElement); }"))
+        check("modale : 30 tabulations, le focus ne quitte jamais la modale", all(inside), str(inside))
+        for _ in range(12):
+            page.keyboard.press("Shift+Tab")
+        check("modale : Maj+Tab reste aussi dans la modale", page.evaluate("() => document.querySelector('[role=dialog]').contains(document.activeElement)"))
+        frame.focus("input[name=consent]")
+        page.keyboard.press("Escape")
+        page.wait_for_selector("#log-events li[data-event='veriage:closed']", timeout=5000)
+        check("modale : Échap dans la page hébergée ferme la modale", page.query_selector("[role=dialog]") is None)
+        check("modale : focus rendu au bouton d'ouverture", page.evaluate("() => document.activeElement && document.activeElement.id === 'demo-open'"))
+        check("modale : page de nouveau active", page.eval_on_selector(".shop-main", "m => !m.inert && !m.hasAttribute('aria-hidden')"))
+        ctx.close()
+
+        # 8. Mode iframe sur mobile : plein écran, un seul bouton de fermeture.
+        print("Mobile : mode iframe en plein écran")
+        ctx = context(browser, "mobile")
+        page = ctx.new_page()
+        create_session(page, args.demo, "fr", "iframe", f"lea+{stamp}@example.com")
+        page.click("#demo-open")
+        frame_el = page.wait_for_selector("iframe[src*='/s/vs_']")
+        check("mobile iframe : présentée comme une superposition (embed=modal)", "embed=modal" in frame_el.get_attribute("src"))
+        frame = frame_el.content_frame()
+        frame.wait_for_selector("input[name=consent]")
+        widget_close = page.eval_on_selector_all("[role=dialog] button", "bs => bs.filter(b => b.offsetParent !== null).length")
+        page_close = frame.eval_on_selector_all(".verify-header [data-veriage-close]", "bs => bs.filter(b => b.offsetParent !== null).length")
+        check("mobile iframe : un seul bouton de fermeture visible", widget_close + page_close == 1, f"widget={widget_close} page={page_close}")
+        shot(page, out, "demo-10-iframe-plein-ecran-mobile-fr", full_page=False)
+        ctx.close()
+
+        # 9. Sécurité : la page hébergée refuse d'être cadrée par un domaine non autorisé (CSP).
         print("Sécurité : frame-ancestors")
         ctx = context(browser)
         page = ctx.new_page()

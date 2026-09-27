@@ -80,11 +80,18 @@ final class DemoController extends Controller
         ], static fn (mixed $v): bool => $v !== '');
 
         [$status, $response] = $this->callApi('POST', '/api/v1/sessions', $body);
+        // Identifiant du « client » de la boutique (cookie propre au site de démo) : la session VeriAge
+        // lui est rattachée dès sa création, et le retour n'est accepté que pour lui.
+        $owner = $this->owner($request) ?? bin2hex(random_bytes(16));
         if (($status === 200 || $status === 201) && is_string($response['session_id'] ?? null)) {
-            $this->remember((string) $response['session_id'], (string) $body['email'], (string) ($response['project'] ?? ''));
+            $this->remember((string) $response['session_id'], (string) $body['email'], (string) ($response['project'] ?? ''), $owner);
         }
 
-        return Response::json(['mode' => $mode, 'api_status' => $status, 'api_request' => $body, 'api_response' => $response], $status === 0 ? 502 : 200);
+        $result = Response::json(['mode' => $mode, 'api_status' => $status, 'api_request' => $body, 'api_response' => $response], $status === 0 ? 502 : 200);
+        $secure = str_starts_with($this->demoUrl(), 'https://') ? '; Secure' : '';
+        $result->addCookie('demo_owner=' . $owner . '; Path=/demo; Max-Age=' . self::TTL . '; HttpOnly; SameSite=Lax' . $secure);
+
+        return $result;
     }
 
     /** GET /demo/status?session_id= : confirmation serveur (API) et webhooks reçus. */
@@ -109,6 +116,19 @@ final class DemoController extends Controller
         $claims = $known === null || $this->signingSecret() === ''
             ? null
             : ReturnToken::verify($request->query('token'), $this->signingSecret(), $known['project'], $sessionId);
+        // Implémentation de référence côté client (voir docs/integration.md) :
+        // 1. la session doit appartenir à l'utilisateur qui l'a créée (ici, cookie de la boutique) ;
+        // 2. chaque jeton (« jti ») n'est accepté qu'une seule fois.
+        $problem = null;
+        if ($claims !== null && ($known['owner'] === '' || !hash_equals($known['owner'], hash('sha256', (string) $this->owner($request))))) {
+            [$claims, $problem] = [null, 'owner_mismatch'];
+        }
+        if ($claims !== null) {
+            $ttl = max(1, (int) ($claims['exp'] ?? 0) - time()) + 60;
+            if ($this->app->redis()->set('demo:jti:' . hash('sha256', (string) ($claims['jti'] ?? '')), '1', 'EX', $ttl, 'NX') === null) {
+                [$claims, $problem] = [null, 'token_replayed'];
+            }
+        }
         $api = null;
         if ($known !== null) {
             [, $api] = $this->callApi('GET', '/api/v1/verifications?' . http_build_query(['email' => $known['email']], '', '&', PHP_QUERY_RFC3986));
@@ -119,6 +139,7 @@ final class DemoController extends Controller
             'pageTitle' => __('site.demo.return_title'),
             'sessionId' => $sessionId,
             'claims' => $claims,
+            'problem' => $problem,
             'api' => $api,
             'webhooks' => $known === null ? [] : $this->webhooks($sessionId),
         ], 'layouts/demo'));
@@ -204,9 +225,17 @@ final class DemoController extends Controller
         }
     }
 
-    private function remember(string $sessionId, string $email, string $project): void
+    /** Identifiant du visiteur de la boutique (cookie HttpOnly du site de démo), ou null. */
+    private function owner(Request $request): ?string
     {
-        $payload = json_encode(['email' => $email, 'project' => $project], JSON_THROW_ON_ERROR);
+        $owner = (string) $request->cookie('demo_owner');
+
+        return preg_match('/^[a-f0-9]{32}$/D', $owner) === 1 ? $owner : null;
+    }
+
+    private function remember(string $sessionId, string $email, string $project, string $owner): void
+    {
+        $payload = json_encode(['email' => $email, 'project' => $project, 'owner' => hash('sha256', $owner)], JSON_THROW_ON_ERROR);
         $this->app->redis()->setex(
             'demo:session:' . hash('sha256', $sessionId),
             self::TTL,
@@ -214,7 +243,7 @@ final class DemoController extends Controller
         );
     }
 
-    /** @return array{email: string, project: string}|null */
+    /** @return array{email: string, project: string, owner: string}|null */
     private function recall(string $sessionId): ?array
     {
         if (preg_match(VerificationSession::ID_REGEX, $sessionId) !== 1) {
@@ -230,7 +259,7 @@ final class DemoController extends Controller
             return null;
         }
 
-        return is_array($data) ? ['email' => (string) $data['email'], 'project' => (string) $data['project']] : null;
+        return is_array($data) ? ['email' => (string) $data['email'], 'project' => (string) $data['project'], 'owner' => (string) ($data['owner'] ?? '')] : null;
     }
 
     /** @return list<array<string, mixed>> */

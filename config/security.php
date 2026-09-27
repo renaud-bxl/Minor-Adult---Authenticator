@@ -65,12 +65,15 @@ return [
         'api_auth_failure_ip' => [20, 300],
         // Sessions créées pour une même adresse (par projet et par mode) : anti-bombardement de codes.
         'api_session_email' => [10, 3600],
-        // Page de vérification hébergée : requêtes par IP, envois de code par IP.
-        'verify_page_ip' => [120, 60],
-        'verify_code_send_ip' => [20, 3600],
-        // Saisies de code par IP, et codes erronés par adresse (projet + mode) toutes sessions confondues.
-        'verify_code_ip' => [60, 3600],
+        // Page de vérification hébergée et codes : seuils lus dans .env, adaptés à la CGNAT des réseaux
+        // mobiles (des milliers d'abonnés derrière une IP). Codes : clé (IP, projet), et non IP seule.
+        'verify_page_ip' => [(int) env('RATE_VERIFY_PAGE_IP_PER_MINUTE', 600), 60],
+        'verify_code_send_ip' => [(int) env('RATE_VERIFY_CODE_SEND_IP_PER_HOUR', 100), 3600],
+        // Saisies de code par (IP, projet), et codes erronés par adresse (projet + mode) toutes sessions confondues.
+        'verify_code_ip' => [(int) env('RATE_VERIFY_CODE_IP_PER_HOUR', 300), 3600],
         'verify_code_email' => [10, 86400],
+        // Codes erronés par adresse tous clients confondus (production) : seuil de la preuve renforcée.
+        'verify_code_global' => [(int) env('VERIFICATION_GLOBAL_CODE_FAILURES', 20), 86400],
         // Démonstration : sessions sandbox créées par IP.
         'demo_session_ip' => [60, 3600],
     ],

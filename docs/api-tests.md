@@ -510,3 +510,48 @@ verification_sessions.email_enc         0
 webhook_deliveries.payload_enc          0
 ```
 (sans rotation en cours : rien à réécrire ; `OperationsTest::testCryptoKeyRotationRewritesEveryCiphertext` couvre une rotation réelle.)
+
+---
+
+## Phase 2 : corrections de l'audit critique (2026-09-27)
+
+### E1. Résultat négatif : validité courte (24 h par défaut, réglable par projet)
+
+Parcours sandbox terminé avec `outcome=minor` à 21:45 UTC, puis :
+
+```bash
+curl -s -H "Authorization: Bearer $K" "$B/api/v1/verifications?email=minor.reaudit@exemple.be"
+curl -s -X POST $B/api/v1/sessions -H "Authorization: Bearer $K" -H 'Content-Type: application/json' -d '{"email":"minor.reaudit@exemple.be"}'
+# 24 h plus tard (simulé : expires_at passé en base)
+curl -s -w ' %{http_code}\n' -X POST $B/api/v1/sessions -H "Authorization: Bearer $K" -H 'Content-Type: application/json' -d '{"email":"minor.reaudit@exemple.be"}'
+```
+
+```
+{"object":"verification","email":"minor.reaudit@exemple.be","livemode":false,"status":"verified","is_adult":false,"min_age":18,
+ "verified_at":"2026-09-27T23:45:19+02:00","method":"mock","expires_at":"2026-09-28T23:45:19+02:00"}          ← +24 h, et non +365 j
+{…,"status":"verified",…,"reused":true,"verification":{…,"is_adult":false,…,"expires_at":"2026-09-28T23:45:19+02:00"}}   ← même expiration
+{…,"session_id":"vs_UsTQBWlPNM6LpNvDUmS5ZgmXRYEzCYLk",…,"status":"pending",…} 201                             ← revérification possible
+```
+
+Réglage : `php bin/project.php set-negative-ttl --project=prj_… --hours=0` (0 : jamais réutilisé), défaut des
+nouveaux projets `VERIFICATION_NEGATIVE_TTL_HOURS=24`. Tests : `ReauditTest` (4 tests E1).
+
+### Consultation par âge et dans le corps ; `bearer` en minuscules
+
+```bash
+curl -s -X POST $B/api/v1/verifications/lookup -H "authorization: bearer $K" -H 'Content-Type: application/json' \
+  -d '{"email":"minor.reaudit@exemple.be","min_age":21}'
+curl -s -w ' %{http_code}\n' -H "Authorization: Bearer $K" "$B/api/v1/verifications?email=a@b.be&min_age=17"
+```
+
+```
+{"object":"verification","email":"minor.reaudit@exemple.be","livemode":false,"status":"pending","is_adult":false,"session_id":"vs_UsTQ…","session_expires_at":"…"}
+{"error":{"code":"validation_failed","message":"Some fields are invalid (see “details”).","details":{"min_age":"invalid"}}} 422
+```
+
+### E2, E3, jeton de retour, popup : `python3 tools/e2e_demo.py` (33/33)
+
+Contrôles clavier (30 tabulations et Maj+Tab confinés dans la modale, reste de la page `inert`, Échap
+dans l'iframe → `veriage:closed`, focus rendu au bouton), mode iframe à 390 px (`embed=modal`, un seul
+bouton de fermeture visible), popup ouvert après le résultat avec invitation à fermer, jeton de retour
+consommé une fois (`token_replayed`) et refusé pour un autre visiteur (`owner_mismatch`).

@@ -33,14 +33,17 @@ final class VerificationRepository
      *
      * @return array<string, mixed>|null
      */
-    public function findShared(string $sharedHash, bool $livemode, int $excludeProjectId, ?int $accountId = null): ?array
+    public function findShared(string $sharedHash, bool $livemode, int $excludeProjectId, ?int $accountId = null, ?int $minAge = null): ?array
     {
+        // Âge demandé filtré en SQL (même règle que VerificationService::covers) : une preuve plus
+        // ancienne mais pertinente n'est pas masquée par une plus récente qui ne l'est pas.
         return $this->db->fetchOne(
             "SELECT v.* FROM verifications v JOIN projects p ON p.id = v.project_id WHERE v.shared_hash = ? AND v.livemode = ? "
             . "AND v.project_id <> ? AND v.source = 'verification' AND v.expires_at > UTC_TIMESTAMP() "
             . ($accountId !== null ? 'AND p.account_id = ? ' : '')
+            . ($minAge !== null ? 'AND ((v.is_adult = 1 AND v.min_age >= ?) OR (v.is_adult = 0 AND v.min_age <= ?)) ' : '')
             . 'ORDER BY v.verified_at DESC LIMIT 1',
-            [$sharedHash, $livemode ? 1 : 0, $excludeProjectId, ...($accountId !== null ? [$accountId] : [])],
+            [$sharedHash, $livemode ? 1 : 0, $excludeProjectId, ...($accountId !== null ? [$accountId] : []), ...($minAge !== null ? [$minAge, $minAge] : [])],
         );
     }
 

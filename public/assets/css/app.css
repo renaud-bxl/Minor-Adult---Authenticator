@@ -418,8 +418,9 @@ p { margin: 0 0 1em; }
     font-size: .78rem;
     color: var(--text-muted);
 }
-.verify-steps li span::before { content: counter(vstep) ". "; }
-.verify-steps li.is-done { border-top-color: var(--brand-soft); }
+.verify-steps li > span:first-child::before { content: counter(vstep) ". "; }
+.verify-steps li.is-done { border-top-color: var(--success-text); color: var(--text); }
+.verify-steps .step-check { color: var(--success-text); font-weight: 700; }
 .verify-steps li.is-current { border-top-color: var(--brand); color: var(--text); font-weight: 700; }
 .info-box { background: var(--surface-muted); border-radius: var(--radius-small); padding: 14px 16px; margin: 16px 0; }
 .info-box h2 { font-size: 1rem; margin-bottom: 8px; }

@@ -53,6 +53,8 @@ final class VerificationSession
         public readonly \DateTimeImmutable $expiresAt,
         public readonly ?\DateTimeImmutable $completedAt,
         public readonly \DateTimeImmutable $createdAt,
+        /** Preuve de contrôle de l'adresse : « code » (6 chiffres) ou « link » (lien à usage unique). */
+        public readonly string $proofKind = 'code',
     ) {
     }
 
@@ -91,6 +93,7 @@ final class VerificationSession
             $date($row['expires_at']) ?? throw new \UnexpectedValueException('expires_at manquant'),
             $date($row['completed_at']),
             $date($row['created_at']) ?? throw new \UnexpectedValueException('created_at manquant'),
+            (string) ($row['proof_kind'] ?? 'code'),
         );
     }
 

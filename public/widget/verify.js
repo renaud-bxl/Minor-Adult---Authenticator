@@ -96,11 +96,17 @@
         return element;
     }
 
-    function verifyUrl(session, mode, lang) {
+    /**
+     * URL de la page hébergée. « embed » décrit la présentation RÉELLE : « modal » pour toute
+     * superposition (modale, ou iframe passée en plein écran sur mobile), « iframe » pour un cadre en
+     * ligne, « popup » pour une fenêtre. La page n'affiche son propre bouton de fermeture que hors
+     * superposition (le widget y pose le sien) : jamais deux boutons pour la même action.
+     */
+    function verifyUrl(session, embed, lang) {
         var url = new URL(base + '/s/' + session);
         url.searchParams.set('lang', lang);
-        if (mode !== 'redirect') {
-            url.searchParams.set('embed', mode === 'iframe' ? 'iframe' : mode);
+        if (embed) {
+            url.searchParams.set('embed', embed);
             url.searchParams.set('origin', window.location.origin);
         }
         return url.toString();
@@ -115,6 +121,42 @@
         frame.setAttribute('referrerpolicy', 'no-referrer');
         css(frame, { border: '0', width: '100%', height: '100%', display: 'block', background: 'transparent' });
         return frame;
+    }
+
+    /**
+     * Rend inerte tout le reste de la page (clavier, clic, lecteurs d'écran) pendant la modale :
+     * « inert » et, en repli, « aria-hidden ». Renvoie la fonction qui restaure l'état d'origine.
+     */
+    function isolate(overlay) {
+        var changed = [];
+        Array.prototype.forEach.call(document.body.children, function (element) {
+            if (element === overlay || element.tagName === 'SCRIPT') {
+                return;
+            }
+            changed.push([element, element.hasAttribute('inert'), element.getAttribute('aria-hidden')]);
+            element.setAttribute('inert', '');
+            element.setAttribute('aria-hidden', 'true');
+        });
+        return function () {
+            changed.forEach(function (entry) {
+                if (!entry[1]) {
+                    entry[0].removeAttribute('inert');
+                }
+                if (entry[2] === null) {
+                    entry[0].removeAttribute('aria-hidden');
+                } else {
+                    entry[0].setAttribute('aria-hidden', entry[2]);
+                }
+            });
+        };
+    }
+
+    /** Élément invisible qui renvoie le focus dans la modale (piège de focus du motif « dialog »). */
+    function sentinel(onFocus) {
+        var element = css(document.createElement('span'), { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden' });
+        element.tabIndex = 0;
+        element.addEventListener('focus', onFocus);
+        return element;
     }
 
     function openOverlay(src, fullscreen) {
@@ -143,8 +185,11 @@
         close.setAttribute('aria-label', t('close'));
         close.addEventListener('click', function () { api.close(); });
         var frame = createFrame(src);
+        // Ordre de tabulation : cadre, bouton de fermeture ; les sentinelles bouclent de l'un à l'autre.
+        dialog.appendChild(sentinel(function () { close.focus(); }));
         dialog.appendChild(frame);
         dialog.appendChild(close);
+        dialog.appendChild(sentinel(function () { frame.focus(); }));
         overlay.appendChild(dialog);
         overlay.addEventListener('click', function (event) {
             if (event.target === overlay) {
@@ -156,14 +201,24 @@
                 api.close();
             }
         };
+        // Filet de sécurité : un focus qui sortirait de la modale (clic, programme) y est ramené.
+        var onFocusIn = function (event) {
+            if (!overlay.contains(event.target)) {
+                frame.focus();
+            }
+        };
         document.addEventListener('keydown', onKey);
+        document.addEventListener('focusin', onFocusIn);
         document.documentElement.style.overflow = 'hidden';
         document.body.appendChild(overlay);
+        var restore = isolate(overlay);
         frame.focus();
         return {
             frame: frame,
             teardown: function () {
                 document.removeEventListener('keydown', onKey);
+                document.removeEventListener('focusin', onFocusIn);
+                restore();
                 document.documentElement.style.overflow = previousOverflow;
                 overlay.remove();
                 if (previousFocus && previousFocus.focus) {
@@ -227,6 +282,7 @@
             verified_at: data.verified_at || null,
             expires_at: data.expires_at || null,
             method: data.method || null,
+            min_age: typeof data.min_age === 'number' ? data.min_age : null,
             token: data.token || null,
         };
         if (data.type === 'completed' || data.type === 'failed') {
@@ -234,11 +290,8 @@
                 return;
             }
             active.reported = true;
+            // Le popup reste ouvert : la personne lit le résultat puis le ferme (bouton de la page).
             emit(data.type, detail);
-            if (active.mode === 'popup') {
-                var popup = active;
-                window.setTimeout(function () { if (active === popup) { finish('closed', { session_id: detail.session_id }); } }, 1500);
-            }
         } else if (data.type === 'close') {
             finish('closed', { session_id: data.session_id });
         } else if (data.type === 'escalate' && typeof data.url === 'string' && data.url.indexOf(base + '/s/' + active.session) === 0) {
@@ -271,13 +324,12 @@
                 api.close();
             }
             // Le popup doit s'ouvrir dans le geste de l'utilisateur, avant toute attente réseau.
-            var src = verifyUrl(session, mode, lang);
             if (mode === 'redirect') {
-                window.location.assign(src);
+                window.location.assign(verifyUrl(session, null, lang));
                 return Promise.resolve(true);
             }
             if (mode === 'popup') {
-                var handle = openPopup(src);
+                var handle = openPopup(verifyUrl(session, 'popup', lang));
                 if (!handle) {
                     return loadMessages(lang).then(function () {
                         emit('failed', { session_id: session, status: 'popup_blocked', message: t('popup_blocked') });
@@ -290,11 +342,14 @@
                 return Promise.resolve(true);
             }
             return loadMessages(lang).then(function () {
+                // Présentation décidée AVANT de construire l'URL : sur mobile, la modale et l'iframe
+                // passent en plein écran (superposition) ; la page le sait par « embed=modal ».
                 var mobile = window.matchMedia && window.matchMedia(MOBILE_QUERY).matches;
                 var container = mode === 'iframe' ? find(options.target) : null;
-                // Sur mobile, la modale et l'iframe passent en plein écran.
-                var ui = container && !mobile ? openInline(src, container) : openOverlay(src, mobile);
-                active = { session: session, mode: container && !mobile ? 'iframe' : 'modal', frame: ui.frame, teardown: ui.teardown, reported: false };
+                var inline = container !== null && !mobile;
+                var src = verifyUrl(session, inline ? 'iframe' : 'modal', lang);
+                var ui = inline ? openInline(src, container) : openOverlay(src, mobile);
+                active = { session: session, mode: inline ? 'iframe' : 'modal', frame: ui.frame, teardown: ui.teardown, reported: false };
                 emit('opened', { session_id: session, mode: mode });
                 return true;
             });

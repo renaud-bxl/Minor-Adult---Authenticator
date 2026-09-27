@@ -8,12 +8,14 @@ declare(strict_types=1);
  *   php bin/project.php create --account-name="Brasserie SA" --name="Boutique" \
  *       --origins=https://boutique.example,https://*.boutique.example [--min-age=18] [--validity-days=365] \
  *       [--webhook-test=https://boutique.example/hooks/veriage] [--webhook-live=…] [--accept-shared]
+ *       [--negative-ttl-hours=24]   (validité d'un résultat « âge non atteint » ; 0 : jamais réutilisé)
  *   php bin/project.php create --account=12 --name=… --origins=…      (compte existant)
  *   php bin/project.php list
  *   php bin/project.php rotate-key    --project=prj_… --mode=test|live
  *   php bin/project.php rotate-secret --project=prj_… --mode=test|live [--grace-hours=24]
  *       (--grace-hours : l'ancien secret signe encore les webhooks pendant ce délai ; 0 si compromis)
  *   php bin/project.php set-origins   --project=prj_… --origins=…
+ *   php bin/project.php set-negative-ttl --project=prj_… --hours=24
  *   php bin/project.php add-webhook   --project=prj_… --mode=test|live --url=…
  *   php bin/project.php demo          (projet de démonstration ; lignes .env sur la sortie standard)
  *
@@ -65,7 +67,7 @@ $printCreated = static function (array $created): void {
     $p = $created['project'];
     echo "Projet créé : {$p->publicId} ({$p->name})\n";
     echo '  Domaines autorisés : ' . implode(', ', $p->allowedOrigins) . "\n";
-    echo "  Âge minimal : {$p->minAge} ; validité : {$p->validityDays} jours\n\n";
+    echo "  Âge minimal : {$p->minAge} ; validité : {$p->validityDays} jours (résultat négatif : {$p->negativeTtlHours} h)\n\n";
     echo "À conserver en lieu sûr (affiché une seule fois) :\n";
     echo "  Clé sandbox     : {$created['keys']['test']}\n";
     echo "  Clé production  : {$created['keys']['live']}\n";
@@ -89,7 +91,13 @@ try {
                 $option('validity-days') !== null ? (int) $option('validity-days') : null,
                 $webhooks,
                 isset($options['accept-shared']),
+                $option('negative-ttl-hours') !== null ? (int) $option('negative-ttl-hours') : null,
             ));
+            break;
+
+        case 'set-negative-ttl':
+            $admin->setNegativeTtl($project(), (int) ($option('hours') ?? throw new InvalidArgumentException('--hours requis.')));
+            echo "Validité d'un résultat négatif mise à jour.\n";
             break;
 
         case 'list':
@@ -154,7 +162,7 @@ try {
             break;
 
         default:
-            $err('Commandes : create, list, rotate-key, rotate-secret, set-origins, add-webhook, demo (voir l\'en-tête de bin/project.php).');
+            $err('Commandes : create, list, rotate-key, rotate-secret, set-origins, set-negative-ttl, add-webhook, demo (voir l\'en-tête de bin/project.php).');
             exit($command === 'help' ? 0 : 1);
     }
 } catch (InvalidArgumentException $e) {

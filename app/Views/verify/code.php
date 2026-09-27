@@ -11,6 +11,7 @@ declare(strict_types=1);
  * @var string      $state
  * @var string      $actionBase
  * @var string      $query
+ * @var array{0: string, 1: string}|null $fieldError erreur de saisie reliée au champ
  */
 ?>
 <section class="verify-card" aria-labelledby="verify-title">
@@ -33,7 +34,11 @@ declare(strict_types=1);
         <div class="field">
             <label for="code"><?= e(__('module.code.label')) ?></label>
             <input id="code" name="code" class="code-input" type="text" inputmode="numeric" autocomplete="one-time-code"
-                   pattern="[0-9]{6}" maxlength="6" minlength="6" required autofocus aria-describedby="code-hint">
+                   pattern="[0-9]{6}" maxlength="6" minlength="6" required autofocus
+                   aria-describedby="<?= !empty($fieldError) ? 'code-error ' : '' ?>code-hint"<?= !empty($fieldError) ? ' aria-invalid="true"' : '' ?>>
+<?php if (!empty($fieldError)): ?>
+            <p class="field-error" id="code-error" role="alert"><?= e(__($fieldError[0])) ?></p>
+<?php endif; ?>
             <p class="field-hint" id="code-hint"><?= e(__('module.code.hint')) ?></p>
         </div>
         <button type="submit" class="button button-block"><?= e(__('module.code.submit')) ?></button>

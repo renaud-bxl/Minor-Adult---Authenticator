@@ -90,4 +90,21 @@ return [
     'notice.consent_required' => 'Cochez la case de consentement pour continuer.',
     'notice.method_invalid' => 'Cette méthode n’est pas disponible ou les informations saisies sont invalides.',
     'notice.shared_unavailable' => 'Cette vérification ne peut plus être réutilisée. Choisissez une méthode.',
+
+    'steps.state_done' => '(étape terminée)',
+    'steps.state_current' => '(étape en cours)',
+    'steps.state_todo' => '(étape à venir)',
+
+    'link.title' => 'Confirmez votre adresse par le lien reçu',
+    'link.intro' => 'Nous avons envoyé un lien de confirmation à usage unique à {email}. Ouvrez-le, confirmez, puis revenez sur cette page.',
+    'link.why' => 'Par sécurité, un lien remplace exceptionnellement le code pour cette adresse.',
+    'link.continue' => 'J’ai confirmé mon adresse, continuer',
+    'link.resend' => 'renvoyez un lien',
+    'link.confirm_title' => 'Confirmer votre adresse e-mail',
+    'link.confirm_intro' => 'Cliquez sur le bouton pour confirmer que cette adresse vous appartient, puis revenez sur la page de vérification.',
+    'link.confirm_submit' => 'Confirmer mon adresse',
+
+    'result.failed_code_text' => 'Trop de codes incorrects ont été saisis : par sécurité, cette vérification est interrompue. Vous pourrez en relancer une depuis {project}.',
+    'result.can_close' => 'Vous pouvez maintenant fermer cette page.',
+    'notice.link_sent' => 'Un lien de confirmation vient d’être envoyé à votre adresse e-mail.',
 ];
