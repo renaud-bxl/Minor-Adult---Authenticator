@@ -63,6 +63,7 @@ final class Route
             )),
         );
 
-        return '#^' . $regex . '$#u';
+        // D : « $ » ne tolère pas de saut de ligne final (« /fr/login%0A » n'est pas « /fr/login »).
+        return '#^' . $regex . '$#uD';
     }
 }

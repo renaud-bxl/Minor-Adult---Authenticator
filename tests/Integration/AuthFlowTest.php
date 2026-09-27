@@ -206,9 +206,81 @@ final class AuthFlowTest extends IntegrationTestCase
         self::assertNotNull($response->header('Retry-After'));
         self::assertStringContainsString('Too many attempts', $response->body());
 
-        // La limite par adresse s'applique aussi depuis une autre IP (attaque distribuée).
+        // Un tiers ne verrouille pas le compte : depuis une autre IP, le titulaire peut encore se connecter.
         $elsewhere = (new HttpClient('198.51.100.50'))->submit('/en/login', '/en/login', ['email' => 'TARGET@acme.test', 'password' => 'guess 7']);
-        self::assertSame(429, $elsewhere->status());
+        self::assertSame(422, $elsewhere->status());
+    }
+
+    public function testDistributedGuessingHitsThePerAddressCeiling(): void
+    {
+        // 4 IP × 5 tentatives = plafond global de 20 par adresse et par heure.
+        for ($n = 1; $n <= 4; $n++) {
+            $client = new HttpClient('198.51.100.' . $n);
+            for ($i = 1; $i <= 5; $i++) {
+                self::assertSame(422, $client->submit('/en/login', '/en/login', ['email' => 'target@acme.test', 'password' => "guess {$n}-{$i}"])->status());
+            }
+        }
+        $response = (new HttpClient('198.51.100.99'))->submit('/en/login', '/en/login', ['email' => 'target@acme.test', 'password' => 'guess 21']);
+        self::assertSame(429, $response->status());
+        $other = (new HttpClient('198.51.100.99'))->submit('/en/login', '/en/login', ['email' => 'other@acme.test', 'password' => 'guess 22']);
+        self::assertSame(422, $other->status(), 'autres adresses non affectées');
+    }
+
+    public function testIpv6ClientsAreThrottledPerSlash64(): void
+    {
+        for ($i = 1; $i <= 5; $i++) {
+            // Une adresse différente du même /64 à chaque tentative : même compteur.
+            $client = new HttpClient('2001:db8:1:2::' . dechex($i));
+            self::assertSame(422, $client->submit('/en/login', '/en/login', ['email' => 'target@acme.test', 'password' => 'guess ' . $i])->status());
+        }
+        $response = (new HttpClient('2001:db8:1:2::ff'))->submit('/en/login', '/en/login', ['email' => 'target@acme.test', 'password' => 'guess 6']);
+        self::assertSame(429, $response->status());
+    }
+
+    public function testSpoofedForwardedForIsIgnored(): void
+    {
+        // Client direct (aucun proxy de confiance configuré) qui change d'X-Forwarded-For à chaque essai.
+        $client = new HttpClient();
+        for ($i = 1; $i <= 5; $i++) {
+            $token = $client->csrfToken('/en/login');
+            $client->request('POST', '/en/login', ['_token' => $token, 'email' => 'target@acme.test', 'password' => 'guess ' . $i], ['X-Forwarded-For' => '192.0.2.' . $i]);
+        }
+        $token = $client->csrfToken('/en/login');
+        $response = $client->request('POST', '/en/login', ['_token' => $token, 'email' => 'target@acme.test', 'password' => 'guess 6'], ['X-Forwarded-For' => '192.0.2.77']);
+        self::assertSame(429, $response->status(), 'X-Forwarded-For d\'un client direct : jamais cru');
+    }
+
+    public function testRepeatedSignUpsDoNotFloodTheOwnerMailbox(): void
+    {
+        $data = ['company' => 'Acme', 'email' => 'dev@acme.test', 'password' => self::PASSWORD, 'password_confirmation' => self::PASSWORD];
+        for ($i = 1; $i <= 5; $i++) {
+            $response = (new HttpClient('198.51.100.' . $i))->submit('/en/register', '/en/register', $data);
+            self::assertSame(302, $response->status());
+            self::assertSame('/en/login', $response->header('Location'));
+        }
+        // 1 e-mail de validation + 2 avertissements, puis plus rien (quota de 3 par adresse et par heure).
+        self::assertCount(3, TestApplication::outbox());
+        self::assertSame(1, (int) $this->app->db()->fetchOne('SELECT COUNT(*) AS n FROM users')['n']);
+    }
+
+    public function testForgotPasswordWorkRunsAfterTheResponse(): void
+    {
+        (new HttpClient())->submit('/en/register', '/en/register', ['company' => 'Acme', 'email' => 'dev@acme.test', 'password' => self::PASSWORD, 'password_confirmation' => self::PASSWORD]);
+        TestApplication::clearOutbox();
+
+        // Sans exécuter les traitements reportés : réponse identique, aucun travail fait pendant la requête.
+        $client = new HttpClient();
+        $token = $client->csrfToken('/en/forgot-password');
+        $app = TestApplication::boot();
+        $request = new \App\Core\Request('POST', '/en/forgot-password', [], ['_token' => $token, 'email' => 'dev@acme.test'], [], $client->cookies(), ['REMOTE_ADDR' => '203.0.113.10']);
+        $response = (new \App\Core\Kernel($app))->handle($request);
+        self::assertSame('/en/login', $response->header('Location'));
+        self::assertSame([], TestApplication::outbox());
+        self::assertNull($this->app->db()->fetchOne("SELECT id FROM user_tokens WHERE type = 'password_reset'"));
+
+        $app->runDeferred();
+        self::assertCount(1, TestApplication::outbox());
+        self::assertNotNull($this->app->db()->fetchOne("SELECT id FROM user_tokens WHERE type = 'password_reset'"));
     }
 
     public function testInvalidResetTokenShowsError(): void

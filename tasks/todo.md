@@ -5,7 +5,7 @@ Légende : `[ ]` à faire · `[~]` en cours · `[x]` terminé (avec preuve) · `
 ## État actuel
 - [x] Section 0 : lessons.md, todo.md, CLAUDE.md créés. Questions bloquantes posées et tranchées (voir CLAUDE.md).
 - [x] Plan de la phase 1 validé (protocole multi-agents, 2026-09-27).
-- [~] **Phase 1 implémentée par le créateur** : en attente du contrôleur puis de l'audit critique.
+- [~] **Phase 1 implémentée par le créateur, contrôlée** (`tasks/reviews/phase-1-controle.md`) : en attente de l'audit critique.
 
 ---
 
@@ -24,7 +24,7 @@ Légende : `[ ]` à faire · `[~]` en cours · `[x]` terminé (avec preuve) · `
 
 ## Phase 1 : Fondations  ← IMPLÉMENTÉE (créateur, 2026-09-27), en attente de contrôle et d'audit
 Objectif : squelette MVC fonctionnel, i18n FR+EN, authentification des comptes clients, layout. Aucune logique de vérification.
-Preuves : `vendor/bin/phpunit` → OK (104 tests, 366 assertions : unit 80/169, integration 24/197) ; `php tools/check_translations.php` → 100 % fr et en ; cURL dans `docs/api-tests.md` ; captures dans `docs/screenshots/phase-1/`.
+Preuves : `vendor/bin/phpunit` → OK (après contrôle : 118 tests, 443 assertions : unit 85/192, integration 33/251) ; `php tools/check_translations.php` → 100 % fr et en ; cURL dans `docs/api-tests.md` ; captures dans `docs/screenshots/phase-1/`.
 
 ### 1.1 Projet et configuration
 - [x] `composer.json` : PHP ≥ 8.2 (plateforme figée à 8.2.0 pour le lock), PSR-4 `App\` → `app/`. Dépendances : `vlucas/phpdotenv` 5.7, `phpmailer/phpmailer` 6.12, `predis/predis` 2.4. Dev : `phpunit/phpunit` 11.5 (justifié : tests exigés par la section 9 ; 11.x car la 12 exige PHP 8.3).
@@ -76,8 +76,9 @@ Preuves : `vendor/bin/phpunit` → OK (104 tests, 366 assertions : unit 80/169, 
 - [x] Captures Playwright (Chromium) : accueil, inscription, connexion × FR/EN × desktop (1366 px)/mobile (390 px) → `docs/screenshots/phase-1/` (12 fichiers).
 
 ### Limites connues (à traiter plus tard)
-- [ ] Envoi des e-mails synchrone dans la requête : la différence de durée « compte existant / inexistant » sur « mot de passe oublié » dépend du temps SMTP. À passer par la file Redis (worker, phase 2).
-- [ ] Verrouillage par adresse e-mail (5 / 15 min) : un tiers peut bloquer temporairement la connexion d'un compte (compromis classique, à réévaluer avec la 2FA en phase 5).
+- [x] ~~Envoi des e-mails synchrone~~ (contrôleur) : inscription, mot de passe oublié et renvoi de validation exécutés après la réponse (`Application::defer` + `fastcgi_finish_request`). La file Redis + worker (phase 2) pourra reprendre ces traitements.
+- [x] ~~Verrouillage par adresse e-mail exploitable par un tiers~~ (contrôleur) : compteurs par IP (/64 en IPv6), par couple adresse + IP (5 / 15 min) et plafond global par adresse (20 / h). Un tiers a besoin de plusieurs IP pour bloquer un compte une heure ; à réévaluer avec la 2FA (phase 5).
+- [ ] Purge des jetons expirés et rétention du journal d'audit : cron (phase 2 ou 10).
 - [ ] `php -S` ne pose pas les en-têtes de sécurité sur les fichiers statiques ; en production : template Hestia (phase 0).
 - [ ] Dossiers `app/Verification`, `app/Billing`, `cron/`, `deploy/` encore vides (phases suivantes).
 

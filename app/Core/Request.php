@@ -19,6 +19,7 @@ final class Request
      * @param array<string, string> $headers noms en minuscules
      * @param array<string, string> $cookies
      * @param array<string, mixed>  $server
+     * @param list<string>          $trustedProxies proxys dont l'en-tête X-Forwarded-For est cru
      */
     public function __construct(
         private readonly string $method,
@@ -28,10 +29,12 @@ final class Request
         private readonly array $headers = [],
         private readonly array $cookies = [],
         private readonly array $server = [],
+        private readonly array $trustedProxies = [],
     ) {
     }
 
-    public static function fromGlobals(): self
+    /** @param list<string> $trustedProxies */
+    public static function fromGlobals(array $trustedProxies = []): self
     {
         $headers = [];
         foreach ($_SERVER as $name => $value) {
@@ -53,6 +56,7 @@ final class Request
             $headers,
             array_filter($_COOKIE, 'is_string'),
             $_SERVER,
+            $trustedProxies,
         );
     }
 
@@ -110,12 +114,16 @@ final class Request
     }
 
     /**
-     * Adresse IP du client. En production (HestiaCP), nginx transmet l'IP réelle et Apache la
-     * restaure via mod_remoteip : REMOTE_ADDR est donc fiable. On n'interprète jamais X-Forwarded-For.
+     * Adresse IP du client. Par défaut REMOTE_ADDR (HestiaCP : Apache la restaure via mod_remoteip).
+     * X-Forwarded-For n'est interprété que si REMOTE_ADDR est un proxy déclaré dans TRUSTED_PROXIES.
      */
     public function ip(): string
     {
-        return (string) ($this->server['REMOTE_ADDR'] ?? '0.0.0.0');
+        return IpAddress::client(
+            (string) ($this->server['REMOTE_ADDR'] ?? '0.0.0.0'),
+            $this->header('X-Forwarded-For'),
+            $this->trustedProxies,
+        );
     }
 
     public function attribute(string $name, mixed $default = null): mixed

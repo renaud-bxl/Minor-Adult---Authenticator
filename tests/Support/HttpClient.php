@@ -40,6 +40,8 @@ final class HttpClient
             ['REMOTE_ADDR' => $this->ip],
         );
         $response = (new Kernel($app))->handle($request);
+        // Comme public/index.php : traitements reportés (e-mails) exécutés après la réponse.
+        $app->runDeferred();
 
         foreach ($response->cookies() as $cookie) {
             [$pair] = explode(';', $cookie, 2);
@@ -77,6 +79,12 @@ final class HttpClient
     public function submit(string $formUri, string $action, array $body): Response
     {
         return $this->post($action, ['_token' => $this->csrfToken($formUri), ...$body]);
+    }
+
+    /** @return array<string, string> */
+    public function cookies(): array
+    {
+        return $this->cookies;
     }
 
     public function forgetCookies(): void

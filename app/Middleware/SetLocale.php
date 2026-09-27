@@ -13,8 +13,8 @@ use App\Models\AccountRepository;
 /**
  * Langue des pages préfixées /{lang}/… (priorités : voir LocaleNegotiator).
  *
- * - « ?lang=xx » : choix explicite, mémorisé en session (et comme préférence du compte si l'utilisateur
- *   est connecté), puis redirection vers l'URL propre /xx/… ;
+ * - « ?lang=xx » (GET) : choix explicite, mémorisé en session (et comme préférence du compte si
+ *   l'utilisateur est connecté), puis redirection vers l'URL propre /xx/… ;
  * - langue mémorisée en session (choix explicite ou préférence du compte chargée à la connexion) :
  *   une requête GET vers une autre langue est redirigée vers la langue mémorisée ;
  * - sinon, le préfixe d'URL fait foi.
@@ -38,7 +38,8 @@ final class SetLocale implements MiddlewareInterface
         $rest = $rest === '' ? '/' : $rest;
         $query = $request->queryAll();
 
-        $queryLang = $request->query('lang');
+        // Uniquement en GET/HEAD : une requête POST ne doit pas modifier la préférence avant le contrôle CSRF.
+        $queryLang = $request->isMethodSafe() ? $request->query('lang') : '';
         if ($queryLang !== '' && $translator->isEnabled($queryLang)) {
             $session->set('locale', $queryLang);
             $userId = $session->get('user_id');

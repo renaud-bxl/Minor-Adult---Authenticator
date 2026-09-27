@@ -33,6 +33,12 @@ final class RouterTest extends TestCase
         self::assertSame([], $params);
     }
 
+    public function testTrailingNewlineDoesNotMatch(): void
+    {
+        $this->expectException(HttpException::class);
+        $this->router->match('GET', "/fr/users/42\n");
+    }
+
     public function testExtractsParametersAndAppliesConstraints(): void
     {
         [$route, $params] = $this->router->match('GET', '/fr/users/42');

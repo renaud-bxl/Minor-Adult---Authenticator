@@ -96,6 +96,21 @@ final class SessionTest extends TestCase
         self::assertSame('v', $session->get('k'));
     }
 
+    public function testRegenerateRestartsTheAbsoluteLifetime(): void
+    {
+        $id = str_repeat('d', 64);
+        $this->handler->store[$id] = json_encode(['_created' => time() - 3000]);
+        $session = $this->session(3600);
+        $session->start($id);
+        $session->regenerate();
+        $session->save();
+
+        $next = $this->session(3600);
+        $next->start($session->id());
+        self::assertSame($session->id(), $next->id());
+        self::assertGreaterThanOrEqual(time() - 1, $next->get('_created'));
+    }
+
     public function testInvalidateClearsData(): void
     {
         $session = $this->session();

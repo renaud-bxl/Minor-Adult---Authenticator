@@ -33,6 +33,9 @@ final class Application
     private ?Mailer $mailer = null;
     private ?Router $router = null;
 
+    /** @var list<callable(): void> */
+    private array $deferred = [];
+
     public function __construct(public readonly string $basePath, public readonly Config $config)
     {
     }
@@ -177,6 +180,36 @@ final class Application
         }
 
         return $this->router;
+    }
+
+    /**
+     * Reporte un traitement après l'envoi de la réponse (e-mails transactionnels notamment).
+     *
+     * Deux raisons : la durée de la réponse ne dépend plus de l'existence d'un compte ni du temps
+     * SMTP (anti-énumération par le temps), et l'utilisateur n'attend pas le serveur de messagerie.
+     * En production (PHP-FPM), public/index.php ferme la connexion (fastcgi_finish_request) avant
+     * d'exécuter ces traitements. La file Redis + worker de la phase 2 pourra les reprendre.
+     *
+     * @param callable(): void $task
+     */
+    public function defer(callable $task): void
+    {
+        $this->deferred[] = $task;
+    }
+
+    /**
+     * Exécute les traitements reportés, dans l'ordre. Un échec est journalisé (sans donnée
+     * personnelle) et n'empêche pas les suivants.
+     */
+    public function runDeferred(): void
+    {
+        while (($task = array_shift($this->deferred)) !== null) {
+            try {
+                $task();
+            } catch (\Throwable $e) {
+                $this->logger()->error('deferred_task_failed', Logger::exceptionContext($e));
+            }
+        }
     }
 
     /** @return array{0: int, 1: int} [tentatives maximales, fenêtre en secondes] */

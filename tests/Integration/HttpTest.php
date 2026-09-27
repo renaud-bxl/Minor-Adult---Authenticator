@@ -76,6 +76,37 @@ final class HttpTest extends IntegrationTestCase
         self::assertSame(200, $client->get('/fr/register')->status());
     }
 
+    public function testEncodedNewlineInPathIs404(): void
+    {
+        self::assertSame(404, (new HttpClient())->get('/en/login%0A?lang=fr')->status());
+    }
+
+    public function testLangParameterIsIgnoredOnUnsafeMethods(): void
+    {
+        // Sans jeton CSRF, un POST « ?lang= » ne modifie rien : il est refusé (419), sans redirection.
+        $client = new HttpClient();
+        $client->get('/fr/login');
+        $response = $client->post('/fr/login?lang=en', []);
+        self::assertSame(419, $response->status());
+        self::assertSame(200, $client->get('/fr/login')->status(), 'langue mémorisée inchangée');
+    }
+
+    public function testFailingDeferredTaskIsLoggedWithoutBreakingOthers(): void
+    {
+        $done = [];
+        $this->app->defer(static function (): void {
+            throw new \RuntimeException('boom for someone@example.com');
+        });
+        $this->app->defer(static function () use (&$done): void {
+            $done[] = 'second';
+        });
+        $this->app->runDeferred();
+        self::assertSame(['second'], $done);
+        $logs = implode("\n", TestApplication::logLines());
+        self::assertStringContainsString('deferred_task_failed', $logs);
+        self::assertStringNotContainsString('someone@example.com', $logs);
+    }
+
     public function testPostWithoutCsrfTokenIs419(): void
     {
         $client = new HttpClient();

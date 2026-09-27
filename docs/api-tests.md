@@ -62,12 +62,15 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST -d 'email=a@b.be&password=x' $B
 
 ### 4. 6e tentative de connexion → 429
 
-Jeton CSRF récupéré sur le formulaire, puis six tentatives avec la même adresse :
+Jeton CSRF récupéré sur le formulaire, puis six tentatives avec la même adresse. Chaque tentative
+change d'en-tête `X-Forwarded-For` : il est ignoré (aucun proxy de confiance déclaré), la limite
+s'applique bien à l'adresse de connexion réelle.
 
 ```bash
 TOKEN=$(curl -s -c jar $B/fr/login | grep -o 'name="_token" value="[a-f0-9]*"' | head -1 | sed 's/.*value="//;s/"//')
 for i in 1 2 3 4 5 6; do
   curl -s -b jar -c jar -o /dev/null -D hdr -w "tentative $i : %{http_code}\n" \
+    -H "X-Forwarded-For: 192.0.2.$i" \
     --data-urlencode "_token=$TOKEN" --data-urlencode "email=cible@example.be" \
     --data-urlencode "password=mauvais mot de passe $i" $B/fr/login
 done
@@ -84,8 +87,13 @@ tentative 6 : 429
 Retry-After: 899
 ```
 
-Limites (config/security.php) : 5 tentatives / 15 min par adresse e-mail, 30 / 15 min par IP.
-Le message d'échec est identique pour une adresse inconnue et un mauvais mot de passe.
+Limites (config/security.php) : 30 / 15 min par IP (préfixe /64 en IPv6), 5 / 15 min par couple
+adresse e-mail + IP, 20 / h par adresse toutes IP confondues. Un tiers ne peut donc pas verrouiller un
+compte depuis une seule IP ; une attaque distribuée reste plafonnée. Le message d'échec est identique
+pour une adresse inconnue et un mauvais mot de passe.
+
+`X-Forwarded-For` n'est lu que si `REMOTE_ADDR` figure dans `TRUSTED_PROXIES` (vide par défaut :
+sous HestiaCP, Apache restaure l'IP réelle via mod_remoteip), et alors de droite à gauche.
 
 ### 5. Traductions du module (widget) : `GET /api/v1/i18n/{code}`
 
@@ -109,6 +117,24 @@ Access-Control-Allow-Origin: *
 ```
 
 (`de` n'est pas encore activée : `LANGS_ENABLED=fr,en` jusqu'à la phase 8.)
+
+### 6. POST avec `?lang=` sans jeton CSRF → 419 (aucune préférence modifiée)
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "$B/fr/login?lang=en"
+```
+
+```
+419
+```
+
+### 7. E-mails après la réponse
+
+Inscription, « mot de passe oublié » et renvoi du lien de validation sont exécutés après l'envoi de la
+réponse (`Application::defer`, `fastcgi_finish_request()` sous PHP-FPM) : la durée de la réponse ne
+dépend ni de l'existence du compte ni du serveur SMTP. Avec `php -S` (pas de `fastcgi_finish_request`),
+le client attend la fin du traitement : mesure non significative en local ; la garantie est vérifiée par
+`AuthFlowTest::testForgotPasswordWorkRunsAfterTheResponse` (aucun jeton ni e-mail pendant la requête).
 
 ### Parcours complet
 

@@ -8,3 +8,4 @@
 __pycache__/
 .phpunit.cache/
 .phpunit.result.cache
+dump.rdb

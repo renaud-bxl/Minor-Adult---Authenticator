@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Crypto;
 use App\Core\Csrf;
+use App\Core\IpAddress;
 use App\Core\Request;
 use App\Core\Response;
 use App\Models\AuditLog;
@@ -24,7 +25,7 @@ final class AuthController extends Controller
 
     public function register(Request $request): Response
     {
-        $limit = $this->throttle('register_ip', $request->ip());
+        $limit = $this->throttleIp('register_ip', $request);
         $old = ['company' => trim($request->input('company')), 'email' => trim($request->input('email'))];
         if (!$limit->allowed) {
             return $this->throttled($this->registerForm($old, ['form' => $this->throttledMessage($limit)], 429), $limit);
@@ -51,7 +52,14 @@ final class AuthController extends Controller
             return $this->registerForm($old, $errors, 422);
         }
 
-        AuthService::fromApplication($this->app)->register($old['company'], $old['email'], $password, locale(), $request->ip());
+        // Inscription traitée après l'envoi de la réponse : durée identique que l'adresse soit nouvelle
+        // ou déjà inscrite. Au-delà du quota par adresse, rien n'est fait (anti-bombardement d'e-mails),
+        // sans réponse différente.
+        if ($this->throttle('register_email', Crypto::normalizeEmail($old['email']))->allowed) {
+            $auth = AuthService::fromApplication($this->app);
+            [$company, $email, $locale, $ip] = [$old['company'], $old['email'], locale(), $request->ip()];
+            $this->app->defer(static fn () => $auth->register($company, $email, $password, $locale, $ip));
+        }
         $request->session()->flash('success', 'site.register.check_email');
 
         return $this->redirectTo('/login');
@@ -67,13 +75,16 @@ final class AuthController extends Controller
         $email = trim($request->input('email'));
         $password = $request->input('password');
 
-        // Deux compteurs : par IP (attaque d'un grand nombre de comptes) et par adresse (attaque ciblée).
-        $byIp = $this->throttle('login_ip', $request->ip());
-        $byEmail = $this->throttle('login_email', Crypto::normalizeEmail($email));
-        if (!$byIp->allowed || !$byEmail->allowed) {
-            $limit = $byIp->allowed ? $byEmail : $byIp;
-
-            return $this->throttled($this->loginForm($email, $this->throttledMessage($limit), 429), $limit);
+        // Trois compteurs (voir config/security.php), contrôlés dans l'ordre : une tentative refusée par
+        // un compteur n'est pas décomptée des suivants, si bien qu'une seule IP ne peut pas épuiser le
+        // quota global d'une adresse (verrouillage du compte par un tiers).
+        $normalized = Crypto::normalizeEmail($email);
+        $ipKey = IpAddress::rateLimitKey($request->ip());
+        foreach (['login_ip' => $ipKey, 'login_email_ip' => $normalized . "\0" . $ipKey, 'login_email' => $normalized] as $bucket => $identifier) {
+            $limit = $this->throttle($bucket, $identifier);
+            if (!$limit->allowed) {
+                return $this->throttled($this->loginForm($email, $this->throttledMessage($limit), 429), $limit);
+            }
         }
 
         if ($email === '' || $password === '') {
@@ -85,7 +96,8 @@ final class AuthController extends Controller
 
         if ($result->status === LoginResult::UNVERIFIED && $result->user !== null) {
             if ($this->throttle('verification_resend_user', (string) $result->user['id'])->allowed) {
-                $auth->resendVerification($result->user, locale());
+                [$user, $locale] = [$result->user, locale()];
+                $this->app->defer(static fn () => $auth->resendVerification($user, $locale));
             }
 
             return $this->loginForm($email, __('site.login.unverified'), 403);
@@ -94,7 +106,8 @@ final class AuthController extends Controller
             return $this->loginForm($email, __('site.login.failed'), 422);
         }
 
-        $this->app->rateLimiter()->clear('login_email', Crypto::normalizeEmail($email));
+        // Seul le compteur de ce couple adresse + IP est remis à zéro : le plafond global reste en place.
+        $this->app->rateLimiter()->clear('login_email_ip', $normalized . "\0" . $ipKey);
         $session = $request->session();
         // Changement de privilège : nouvel identifiant de session (anti-fixation) et nouveau jeton CSRF.
         $session->regenerate();

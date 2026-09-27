@@ -114,13 +114,17 @@ final class Session
         return $this->flashNow[$key] ?? $default;
     }
 
-    /** Nouvel identifiant, données conservées (à appeler à chaque changement de privilège). */
+    /**
+     * Nouvel identifiant, données conservées (à appeler à chaque changement de privilège). La durée
+     * de vie absolue repart de ce moment : elle borne la session authentifiée, pas la visite anonyme.
+     */
     public function regenerate(): void
     {
         if ($this->persisted) {
             $this->handler->destroy($this->id);
         }
         $this->id = self::newId();
+        $this->data['_created'] = time();
         $this->persisted = false;
         $this->dirty = true;
     }
@@ -133,13 +137,20 @@ final class Session
         $this->flashNow = [];
     }
 
-    /** Persiste la session. Renvoie false si rien n'est à persister (visiteur sans état). */
+    /**
+     * Persiste la session. Renvoie false si rien n'est à persister (visiteur sans état) ou si la
+     * session a été détruite par une requête concurrente (le stockage refuse alors de la recréer).
+     */
     public function save(): bool
     {
         if (!$this->persisted && !$this->dirty) {
             return false;
         }
-        $this->handler->write($this->id, json_encode($this->data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+        if (!$this->handler->write($this->id, json_encode($this->data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE))) {
+            $this->persisted = false;
+
+            return false;
+        }
         $this->persisted = true;
         $this->dirty = false;
 

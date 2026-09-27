@@ -66,6 +66,45 @@ final class HttpPrimitivesTest extends TestCase
         self::assertNull(IpAddress::truncate('not-an-ip'));
     }
 
+    public function testRateLimitKeyGroupsIpv6By64(): void
+    {
+        self::assertSame('203.0.113.77', IpAddress::rateLimitKey('203.0.113.77'));
+        self::assertSame('2001:db8:1:2::', IpAddress::rateLimitKey('2001:db8:1:2:aaaa:bbbb:cccc:dddd'));
+        self::assertSame(IpAddress::rateLimitKey('2001:db8:1:2::1'), IpAddress::rateLimitKey('2001:db8:1:2::ffff'));
+        self::assertNotSame(IpAddress::rateLimitKey('2001:db8:1:2::1'), IpAddress::rateLimitKey('2001:db8:1:3::1'));
+    }
+
+    public function testClientIpIgnoresForwardedForUnlessProxyIsTrusted(): void
+    {
+        // Aucun proxy de confiance, ou connexion directe d'un client : l'en-tête est ignoré.
+        self::assertSame('198.51.100.7', IpAddress::client('198.51.100.7', '1.2.3.4', []));
+        self::assertSame('198.51.100.7', IpAddress::client('198.51.100.7', '1.2.3.4', ['127.0.0.1']));
+
+        // Proxy de confiance : entrée la plus à droite qui n'est pas un proxy de confiance.
+        self::assertSame('203.0.113.9', IpAddress::client('127.0.0.1', '203.0.113.9', ['127.0.0.1']));
+        self::assertSame('203.0.113.9', IpAddress::client('127.0.0.1', '6.6.6.6, 203.0.113.9', ['127.0.0.1']), 'entrée de gauche forgée par le client');
+        self::assertSame('203.0.113.9', IpAddress::client('10.0.0.2', '203.0.113.9, 10.0.0.5', ['10.0.0.0/8']));
+        self::assertSame('2001:db8::5', IpAddress::client('::1', '2001:db8::5', ['::1']));
+
+        // En-tête absent ou invalide : l'adresse du proxy.
+        self::assertSame('127.0.0.1', IpAddress::client('127.0.0.1', null, ['127.0.0.1']));
+        self::assertSame('127.0.0.1', IpAddress::client('127.0.0.1', 'garbage', ['127.0.0.1']));
+
+        $request = new Request('GET', '/', [], [], ['x-forwarded-for' => '203.0.113.9'], [], ['REMOTE_ADDR' => '127.0.0.1'], ['127.0.0.1']);
+        self::assertSame('203.0.113.9', $request->ip());
+        $direct = new Request('GET', '/', [], [], ['x-forwarded-for' => '203.0.113.9'], [], ['REMOTE_ADDR' => '127.0.0.1']);
+        self::assertSame('127.0.0.1', $direct->ip());
+    }
+
+    public function testCidrMatching(): void
+    {
+        self::assertTrue(IpAddress::matchesAny('172.16.5.4', ['172.16.0.0/12']));
+        self::assertFalse(IpAddress::matchesAny('172.32.0.1', ['172.16.0.0/12']));
+        self::assertTrue(IpAddress::matchesAny('192.0.2.1', ['0.0.0.0/0']));
+        self::assertFalse(IpAddress::matchesAny('192.0.2.1', ['::/0', 'invalid', '192.0.2.0/33']));
+        self::assertFalse(IpAddress::matchesAny('not-an-ip', ['0.0.0.0/0']));
+    }
+
     public function testLoggerRedactsPersonalData(): void
     {
         self::assertSame('login [email] from [ip] / [ip]', Logger::redact('login Jane.Doe+x@exemple.be from 198.51.100.4 / 2001:db8::1:2'));

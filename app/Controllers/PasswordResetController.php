@@ -20,7 +20,7 @@ final class PasswordResetController extends Controller
     public function sendResetLink(Request $request): Response
     {
         $email = trim($request->input('email'));
-        $byIp = $this->throttle('password_reset_ip', $request->ip());
+        $byIp = $this->throttleIp('password_reset_ip', $request);
         if (!$byIp->allowed) {
             return $this->throttled($this->forgotForm($email, $this->throttledMessage($byIp), 429), $byIp);
         }
@@ -30,8 +30,12 @@ final class PasswordResetController extends Controller
 
         // Au-delà du quota par adresse, on répond comme d'habitude sans renvoyer d'e-mail :
         // un message différent révélerait que l'adresse a déjà reçu des liens, donc qu'elle existe.
+        // Le traitement (recherche du compte, jeton, e-mail) a lieu après l'envoi de la réponse :
+        // sa durée ne trahit donc pas l'existence du compte.
         if ($this->throttle('password_reset_email', Crypto::normalizeEmail($email))->allowed) {
-            AuthService::fromApplication($this->app)->requestPasswordReset($email, locale(), $request->ip());
+            $auth = AuthService::fromApplication($this->app);
+            [$locale, $ip] = [locale(), $request->ip()];
+            $this->app->defer(static fn () => $auth->requestPasswordReset($email, $locale, $ip));
         }
         $request->session()->flash('info', 'site.forgot.sent');
 

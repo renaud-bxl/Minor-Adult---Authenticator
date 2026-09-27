@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Application;
+use App\Core\IpAddress;
 use App\Core\RateLimitResult;
+use App\Core\Request;
 use App\Core\Response;
 use App\Services\PasswordPolicy;
 
@@ -35,6 +37,12 @@ abstract class Controller
         [$max, $window] = $this->app->rateLimit($bucket);
 
         return $this->app->rateLimiter()->attempt($bucket, $identifier, $max, $window);
+    }
+
+    /** Compteur par adresse IP du client (préfixe /64 en IPv6). */
+    protected function throttleIp(string $bucket, Request $request): RateLimitResult
+    {
+        return $this->throttle($bucket, IpAddress::rateLimitKey($request->ip()));
     }
 
     protected function throttledMessage(RateLimitResult $limit): string
