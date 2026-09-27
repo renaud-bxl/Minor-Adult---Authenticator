@@ -47,7 +47,7 @@ def test_rule_requires_birth_date_and_a_second_field():
 
 
 def test_old_french_identity_card_is_unsupported():
-    lines = ["IDFRASPECIMEN<<<<<<<<<<<<<<<<<<<<<<", "8806923102858CORINNE<<<<<<6512068F4"]
+    lines = ["IDFRASPECIMEN<<<<<<<<<<<<<<<<<<<<<<<", "8806923102858CORINNE<<<<<<<6512068F6"]  # spécimen public (2 × 36)
     with pytest.raises(mrz.MrzError) as error:
         mrz.parse(lines, TODAY)
     assert error.value.reason == "document_unsupported"

@@ -82,7 +82,9 @@ def test_parsed_data_holds_no_identity():
     kept = repr(data)
     for secret in ("ERIKSSON", "ANNA", "D23145890"):
         assert secret not in kept
-    assert set(data.__dataclass_fields__) == {"format", "document_code", "birth_date", "expiry_date", "checks"}
+    # Le numéro est gardé en mémoire pour lier les faces de la pièce, mais n'apparaît dans aucune trace.
+    assert set(data.__dataclass_fields__) == {"format", "document_code", "birth_date", "expiry_date", "checks", "document_number"}
+    assert data.document_number == "D23145890" and "D23145890" not in repr(data)
 
 
 def test_document_number_ambiguity_resolved_by_check_digit():

@@ -10,29 +10,32 @@ P = Params()
 
 
 def sequence(challenge, *, step_frames=8, interval=150, neutral=4, yaw_peak=0.45, ear_open=0.30, ear_closed=0.10,
-             similarity=0.9, faces=1, overrides=None):
+             similarity=0.9, faces=1, overrides=None, mar_closed=0.05, mar_open=0.6):
     """Séquence simulée : fenêtre neutre puis une fenêtre par défi (mouvement en cloche)."""
     frames, t = [], 0
     for _ in range(neutral):
-        frames.append(Measure(t, 0, faces, 0.9, 0.02, ear_open, similarity)); t += interval
+        frames.append(Measure(t, 0, faces, 0.9, 0.02, ear_open, similarity, mar_closed)); t += interval
     for step, action in enumerate(challenge, start=1):
         for i in range(step_frames):
             phase = float(np.sin(np.pi * i / (step_frames - 1)))
-            yaw, ear = 0.0, ear_open
+            yaw, ear, mar = 0.0, ear_open, mar_closed
             if action == "turn_left":
                 yaw = yaw_peak * phase
             elif action == "turn_right":
                 yaw = -yaw_peak * phase
             elif action == "blink" and step_frames // 3 <= i < step_frames // 3 + 2:
                 ear = ear_closed
-            frames.append(Measure(t, step, faces, 0.9, yaw, ear, similarity)); t += interval
+            elif action == "open_mouth" and step_frames // 3 <= i < step_frames // 3 + 3:
+                mar = mar_open
+            frames.append(Measure(t, step, faces, 0.9, yaw, ear, similarity, mar)); t += interval
     for index, change in (overrides or {}).items():
         m = frames[index]
         frames[index] = Measure(**{**m.__dict__, **change})
     return frames
 
 
-@pytest.mark.parametrize("challenge", [["turn_left", "blink", "turn_right"], ["blink", "turn_right"], ["turn_right", "turn_left", "blink"]])
+@pytest.mark.parametrize("challenge", [["turn_left", "blink", "turn_right"], ["blink", "turn_right"], ["turn_right", "turn_left", "blink"],
+                                       ["open_mouth", "turn_left", "open_mouth", "blink"]])
 def test_challenges_performed_in_order_pass(challenge):
     result = evaluate(sequence(challenge), challenge, P)
     assert result.passed, result.reasons
@@ -124,13 +127,15 @@ def _points(landmarker, image):
 
 def test_mediapipe_measures_yaw_sign_and_eye_closure(landmarker, face_engine, assets):
     base = synth.selfie_frame(synth.load_asset("astronaut.png"))
-    count, yaw, ear = landmarker.measure(base)
+    count, yaw, ear, mar = landmarker.measure(base)
     assert count == 1 and abs(yaw) < 0.15 and ear > 0.2
     box = tuple(int(v) for v in face_engine.detect(base)[0].box)
-    _, yaw_left, _ = landmarker.measure(synth.yaw_warp(base, box, 1.3))
-    _, yaw_right, _ = landmarker.measure(synth.yaw_warp(base, box, -1.3))
+    _, yaw_left, _, _ = landmarker.measure(synth.yaw_warp(base, box, 1.3))
+    _, yaw_right, _, _ = landmarker.measure(synth.yaw_warp(base, box, -1.3))
     assert yaw_left > 0.28 > -0.28 > yaw_right  # nez vers la droite de l'image = tête tournée vers SA gauche
-    _, _, ear_closed = landmarker.measure(synth.close_eyes(base, _points(landmarker, base)))
+    _, _, ear_closed, _ = landmarker.measure(synth.close_eyes(base, _points(landmarker, base)))
+    _, _, _, mar_open = landmarker.measure(synth.open_mouth(base, _points(landmarker, base)))
+    assert mar_open >= max(0.35, mar + 0.15)
     assert ear_closed < 0.65 * ear
     assert landmark_yaw(_points(landmarker, base)) == pytest.approx(yaw, abs=1e-3)
     assert eye_aspect_ratio(_points(landmarker, base), EYE_A) > 0.2
@@ -144,5 +149,14 @@ def test_flat_photo_rotated_in_3d_keeps_a_small_yaw(landmarker, assets):
     src = np.float32([[0, 0], [w, 0], [w, h], [0, h]])
     dst = np.float32([[0, 0], [w * 0.8, h * 0.08], [w * 0.8, h * 0.92], [0, h]])
     rotated_photo = cv2.warpPerspective(base, cv2.getPerspectiveTransform(src, dst), (w, h), borderMode=cv2.BORDER_REPLICATE)
-    _, yaw, _ = landmarker.measure(rotated_photo)
+    _, yaw, _, _ = landmarker.measure(rotated_photo)
     assert yaw is not None and abs(yaw) < 0.28
+
+
+def test_open_mouth_requires_a_clear_opening_above_the_reference():
+    assert evaluate(sequence(["open_mouth"]), ["open_mouth"], P).passed
+    assert evaluate(sequence(["open_mouth"], mar_open=0.25), ["open_mouth"], P).reasons == ["liveness_challenge_failed"]
+    # Bouche déjà ouverte sur l'image de référence : l'ouverture doit dépasser la référence de 0,15.
+    assert not evaluate(sequence(["open_mouth"], mar_closed=0.5, mar_open=0.6), ["open_mouth"], P).passed
+    no_mar = [Measure(m.t_ms, m.step, m.faces, m.score, m.yaw, m.ear, m.similarity, None) for m in sequence(["open_mouth"])]
+    assert "liveness_mouth_unsupported" in evaluate(no_mar, ["open_mouth"], P).reasons
