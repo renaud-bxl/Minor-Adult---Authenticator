@@ -1,4 +1,7 @@
-VERDICT : REJETÉ
+VERDICT : APPROUVÉ
+
+> Premier audit : REJETÉ (3 exigences bloquantes, section ci-dessous). Ré-audit du 2026-09-27 (`4745f4d..234afe7`) :
+> toutes les exigences sont satisfaites. Voir la section « Ré-audit » en fin de document.
 
 # Phase 2 (API et module) : audit du critique
 
@@ -261,3 +264,112 @@ Ce fichier, exigé par le cahier des charges §7, n'existe pas encore.
 
 Corriger E1 à E3 avec leurs tests. Relancer ensuite phpunit, `check_translations`, puis l'E2E enrichi :
 clavier de la modale et mode iframe à 390 px. Mettre à jour `tasks/todo.md`. Nouvel audit du critique ensuite.
+
+---
+
+## Ré-audit (2026-09-27, `git diff 4745f4d..234afe7`)
+
+Documents relus : `tasks/reviews/phase-2-critique-suivi.md` (créateur, `e39a3a4`), section « Contrôle des
+corrections » de `tasks/reviews/phase-2-controle.md` (contrôleur, `234afe7`), et le diff complet
+(74 fichiers : service, contrôleur de la page, widget, `verify-page.js`, vues, migrations 0014 et 0015,
+configuration, `docs/integration.md`, `docs/rgpd.md`, tests).
+
+### Preuves exécutées par le critique
+
+- `vendor/bin/phpunit` : **OK (263 tests, 1 624 assertions)**.
+- `php tools/check_translations.php` : **100 % fr et en (285/285)**, 279 clés citées, 0 inconnue.
+- `php bin/migrate.php --status` : aucune migration en attente (0014 et 0015 appliquées).
+- `CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome python3 tools/e2e_demo.py` (captures
+  dans un dossier temporaire) : **34/34**. Captures relues : iframe plein écran mobile (un seul « × »),
+  étapes cochées, page du code.
+- Test clavier indépendant (script Playwright hors dépôt), modale ouverte :
+  - 20 × Tab et 10 × Maj+Tab : le focus ne quitte jamais `{IFRAME, BUTTON[Fermer]}` ;
+  - un `focus()` programmatique sur un champ de la page cliente est ramené dans le cadre ;
+  - parcours au clavier dans le cadre : un code faux donne `aria-invalid="true"` et
+    `aria-describedby="code-error code-hint"` ;
+  - Échap pressé avec le focus dans le cadre : la modale se ferme et émet `opened` puis `closed` ;
+  - après la fermeture, plus aucun élément `inert` ni `aria-hidden`, et le focus revient sur
+    `#demo-open`.
+- cURL sur trois projets créés pour l'audit (validité négative 0 h et 24 h), en sandbox et en production :
+  - **E1** : avec 24 h, un résultat mineur n'est réutilisé que jusqu'à J+1, avec `expires_at` à J+1 et non
+    J+365. Avec 0 h, il n'est jamais réutilisé : une nouvelle session est proposée, et l'API renvoie
+    `not_verified`. Un échec technique n'est pas mis en cache : une nouvelle session est proposée.
+  - **Consultation** : `min_age=21` sur un résultat « majeur à 18 » donne `not_verified` ; `min_age=18`
+    donne `verified` ; `min_age=17` est refusé en 422 ; `lookup` refuse un champ inconnu (422) ; le schéma
+    `bearer` en minuscules est accepté.
+  - **Q2** : juste après la fin de la session, `/return` redirige avec un jeton, et le `postMessage` porte un
+    `token`. Une fois `completed_at` reculé de 11 min en base, `/return` renvoie à la page, le message
+    contient `"token":null`, le bouton de retour disparaît et l'invitation à fermer apparaît
+    (`data-can-close`).
+  - **Q1, en production, sur trois projets** : la même adresse cumule 20 codes erronés. Tant que ce total
+    n'est pas atteint, le consentement donne `notice=code_sent`. Une fois les 20 codes erronés atteints, il
+    donne `notice=link_sent`, sans aucun blocage de l'adresse. Le lien envoyé (e-mail décodé depuis
+    `storage/mail`) donne ensuite :
+    - GET `/confirm` : une page de confirmation, et la session n'est pas consommée ;
+    - POST avec 6 chiffres : refusé ;
+    - POST avec un jeton forgé de même forme : refusé ;
+    - POST avec le vrai jeton : l'adresse est confirmée, la page passe au choix de la méthode, et en base
+      `proof_kind='link'` et `code_hash` vaut NULL (usage unique) ;
+    - journaux : `verification_proof_escalated` porte le seul identifiant de projet, et le jeton n'apparaît
+      nulle part dans `storage/logs`.
+
+### Verdict par point
+
+| Réf. | Verdict | Observation |
+|---|---|---|
+| E1 | **Satisfaite** | `resultExpiry()` est appliqué au résultat direct et à la copie partagée. L'expiration est cohérente partout : base, API, webhook, JWT et réponse de réutilisation. Le réglage se fait par projet (migration 0014), et le contrôleur a ajouté la validation au démarrage. |
+| E2 | **Satisfaite** | Motif « dialog » complet : `inert` et `aria-hidden` avec restauration exacte de l'état d'origine, piège de focus (sentinelles et `focusin`), Échap depuis le cadre par un `postMessage` contrôlé (origine, fenêtre source, session), focus rendu à l'élément d'origine. |
+| E3 | **Satisfaite** | La présentation est décidée avant de construire l'URL : `embed=modal` pour toute superposition. Un seul bouton de fermeture visible à 390 px (E2E et capture). |
+| Q1 | **Correctement appliqué** | Seuil global de 20, en production, sans blocage ; lien d'environ 190 bits, stocké sous forme de HMAC, valable 15 min, à usage unique, validé en POST seulement ; audit et alerte sans donnée d'identité. |
+| Q2 | **Correctement appliqué** | Fenêtre de 10 min (réglable de 60 à 3 600 s, contrôlée au démarrage) ; démo de référence (déduplication de `jti` et rattachement de la session au visiteur) ; documenté (§7). |
+| Q3 | **Correctement appliqué** | Clé (IP /64, projet) pour la saisie (300 par heure) et l'envoi (100 par heure) ; page à 600 par minute par IP ; seuils lus dans `.env` et validés au démarrage (correction du contrôleur : une faute de frappe ne peut plus bloquer toutes les pages). |
+
+**Régressions** : aucune.
+- Les tests existants restent verts.
+- Les 4 modes du widget, les webhooks, le JWT et la CSP sont revérifiés par l'E2E.
+- Le popup n'est plus fermé automatiquement ; il affiche une invitation à fermer, comme demandé en R9.
+- Aucune chaîne en dur ajoutée.
+- `docs/integration.md` et `docs/rgpd.md` sont conformes au comportement observé, y compris la
+  conséquence d'une validité négative de 0 h : un résultat négatif n'est alors disponible que par le
+  webhook et le jeton.
+
+**Reports** : ils sont **acceptables**.
+- R7 : précision des `details`, sans enjeu de sécurité.
+- R11 : diagnostics côté intégrateur, avec une piste ci-dessous.
+- R15 : `X-RateLimit-Reset`.
+- R16 : exécution sur PHP 8.2 réel en CI.
+- R18 : unité systemd et purge toutes les 15 min.
+
+Chacun a une échéance (phases 0, 3, 5 ou 10) et reste tracé.
+
+### Nouvelles recommandations non bloquantes (5)
+
+- **N1.** La page `/s/{id}/confirm` s'affiche même quand la session est close (échouée, terminée, expirée).
+  La confirmation échoue ensuite avec « code incorrect ». Si la session n'est plus en attente, rediriger
+  vers la page de la session.
+- **N2.** Avec une validité négative de 0 h, la consultation par l'API renvoie `not_verified` juste après un
+  résultat mineur. Ce comportement est documenté, mais il est déroutant pour un client qui confirme par
+  l'API comme on le lui demande. Deux options : exposer le statut de la dernière session terminée, par
+  exemple `last_session: {status, is_adult}` ; ou fixer le minimum à 1 h.
+- **N3.** `POST /api/v1/verifications/lookup` ne renvoie que les champs inconnus quand il y en a. Les autres
+  erreurs (`min_age`) n'apparaissent qu'à l'appel suivant. Mieux vaut agréger toutes les erreurs, comme
+  `POST /sessions`.
+- **N4.** Risque résiduel de Q1 : une session qui a déjà reçu un code à 6 chiffres avant le franchissement
+  du seuil global reste attaquable dans les plafonds existants (5 essais par session, 10 par adresse et par
+  projet). C'est acceptable, mais le seuil pourrait être revérifié au moment de la saisie.
+- **N5.** Pour R11, sans enfreindre la règle « aucune chaîne en dur » : émettre des codes plutôt que du
+  texte, par exemple `veriage:failed` avec `status: 'target_not_found'` ou `'origin_not_allowed'`. Ce sont
+  des codes stables et documentés, pas des phrases à traduire.
+
+### Nettoyage
+
+Données de l'audit supprimées de la base de dev :
+- 3 comptes et 3 projets (avec leurs clés et sessions, en cascade) ;
+- les 27 sessions, 14 vérifications, 18 livraisons et 136 lignes d'audit de mes exécutions E2E et de mes
+  scripts ;
+- les 10 e-mails de `storage/mail` produits par le test de Q1.
+
+Les données du contrôleur (sessions n° 87 à 115) sont conservées. Les compteurs Redis de mes tests expirent
+seuls, en 24 h au plus pour le compteur global de l'adresse de test `q1.victim@example.com`.
+
+**Verdict final : APPROUVÉ.**
