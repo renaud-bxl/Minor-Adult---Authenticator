@@ -58,3 +58,11 @@ Cahier des charges complet : section de chaque phase dans `tasks/todo.md`.
 ## Standard de vérification
 Aucune tâche n'est terminée sans preuve : tests PHPUnit passants, appels cURL (`docs/api-tests.md`), vérification visuelle des pages.
 Toujours se demander : « Est-ce qu'un staff engineer validerait ça ? »
+
+## Protocole multi-agents (mode automatique, validé par Renaud le 2026-09-27)
+Cahier des charges intégral : `docs/cahier-des-charges.md` (fait foi, avec les décisions ci-dessus qui le priment).
+Chaque phase de `tasks/todo.md` passe par trois agents :
+1. **Créateur** : implémente la phase, écrit les tests, fournit les preuves, coche `tasks/todo.md`.
+2. **Contrôleur** : relit tout le diff de la phase, cherche bugs, failles, écarts au cahier des charges, solutions plus élégantes ; corrige directement ; rapport dans `tasks/reviews/phase-N-controle.md`.
+3. **Critique** : audit final exigeant (sécurité, RGPD, qualité, tests, i18n, UX, conformité) ; verdict `APPROUVÉ` ou `REJETÉ` + liste d'exigences dans `tasks/reviews/phase-N-critique.md`. Si rejet : retour au créateur puis au contrôleur, puis nouvel audit.
+Une phase n'est commitée qu'après `APPROUVÉ`.
