@@ -9,6 +9,7 @@ use App\Core\Csrf;
 use App\Core\IpAddress;
 use App\Core\Request;
 use App\Core\Response;
+use App\Core\TextInput;
 use App\Models\AuditLog;
 use App\Services\AuthService;
 use App\Services\LoginResult;
@@ -26,38 +27,45 @@ final class AuthController extends Controller
     public function register(Request $request): Response
     {
         $limit = $this->throttleIp('register_ip', $request);
-        $old = ['company' => trim($request->input('company')), 'email' => trim($request->input('email'))];
+        $rawCompany = $request->input('company');
+        $rawEmail = $request->input('email');
+        $old = ['company' => TextInput::forDisplay(trim($rawCompany)), 'email' => TextInput::forDisplay(trim($rawEmail))];
         if (!$limit->allowed) {
             return $this->throttled($this->registerForm($old, ['form' => $this->throttledMessage($limit)], 429), $limit);
         }
 
         $password = $request->input('password');
         $errors = [];
-        $companyLength = mb_strlen($old['company'], 'UTF-8');
-        if ($companyLength < 2) {
+        $company = TextInput::normalize($rawCompany);
+        if ($company === null) {
+            $errors['company'] = __('site.validation.text_invalid');
+        } elseif (mb_strlen($company, 'UTF-8') < 2) {
             $errors['company'] = __('site.validation.company_required');
-        } elseif ($companyLength > self::COMPANY_MAX_LENGTH) {
+        } elseif (mb_strlen($company, 'UTF-8') > self::COMPANY_MAX_LENGTH) {
             $errors['company'] = __('site.validation.company_too_long', ['max' => self::COMPANY_MAX_LENGTH]);
+        } else {
+            $old['company'] = $company;
         }
-        if (!self::isValidEmail($old['email'])) {
+        $email = self::validEmail($rawEmail);
+        if ($email === null) {
             $errors['email'] = __('site.validation.email_invalid');
         }
-        $policyError = $this->passwordPolicy()->validate($password, $old['email']);
+        $policyError = $this->passwordPolicy()->validate($password, array_values(array_filter([$email ?? $old['email'], $company ?? ''])));
         if ($policyError !== null) {
             $errors['password'] = __($policyError[0], $policyError[1]);
         } elseif (!hash_equals($password, $request->input('password_confirmation'))) {
             $errors['password_confirmation'] = __('site.validation.password_mismatch');
         }
-        if ($errors !== []) {
+        if ($errors !== [] || $company === null || $email === null) {
             return $this->registerForm($old, $errors, 422);
         }
 
         // Inscription traitée après l'envoi de la réponse : durée identique que l'adresse soit nouvelle
         // ou déjà inscrite. Au-delà du quota par adresse, rien n'est fait (anti-bombardement d'e-mails),
         // sans réponse différente.
-        if ($this->throttle('register_email', Crypto::normalizeEmail($old['email']))->allowed) {
+        if ($this->throttle('register_email', Crypto::normalizeEmail($email))->allowed) {
             $auth = AuthService::fromApplication($this->app);
-            [$company, $email, $locale, $ip] = [$old['company'], $old['email'], locale(), $request->ip()];
+            [$locale, $ip] = [locale(), $request->ip()];
             $this->app->defer(static fn () => $auth->register($company, $email, $password, $locale, $ip));
         }
         $request->session()->flash('success', 'site.register.check_email');
@@ -72,7 +80,8 @@ final class AuthController extends Controller
 
     public function login(Request $request): Response
     {
-        $email = trim($request->input('email'));
+        // Une saisie invalide (encodage, caractères de contrôle) est traitée comme vide : échec générique.
+        $email = TextInput::normalize($request->input('email')) ?? '';
         $password = $request->input('password');
 
         // Trois compteurs (voir config/security.php), contrôlés dans l'ordre : une tentative refusée par

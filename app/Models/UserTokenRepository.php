@@ -66,6 +66,17 @@ final class UserTokenRepository
         return $row === null ? null : (int) $row['user_id'];
     }
 
+    /** Utilisateur d'un jeton déjà consommé (quel que soit son âge), ou null. */
+    public function findUsed(string $type, string $token): ?int
+    {
+        $row = $this->db->fetchOne(
+            'SELECT user_id FROM user_tokens WHERE token_hash = ? AND type = ? AND used_at IS NOT NULL',
+            [Crypto::hashToken($token), $type],
+        );
+
+        return $row === null ? null : (int) $row['user_id'];
+    }
+
     public function revokeAll(int $userId, string $type): void
     {
         $this->db->execute('DELETE FROM user_tokens WHERE user_id = ? AND type = ? AND used_at IS NULL', [$userId, $type]);

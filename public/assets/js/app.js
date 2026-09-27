@@ -13,12 +13,11 @@
         }
         button.hidden = false;
         button.setAttribute('aria-controls', input.id);
-        button.setAttribute('aria-pressed', 'false');
         button.addEventListener('click', function () {
             var reveal = input.type === 'password';
             input.type = reveal ? 'text' : 'password';
+            // Le libellé change (« Afficher » / « Masquer ») : pas d'aria-pressed en plus, qui dirait l'inverse.
             button.textContent = button.getAttribute(reveal ? 'data-label-hide' : 'data-label-show');
-            button.setAttribute('aria-pressed', reveal ? 'true' : 'false');
         });
     });
 

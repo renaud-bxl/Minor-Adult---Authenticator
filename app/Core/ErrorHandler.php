@@ -37,8 +37,8 @@ final class ErrorHandler
     {
         if (PHP_SAPI === 'cli') {
             fwrite(STDERR, "Erreur interne : consulter storage/logs.\n");
-
-            return;
+            // Un gestionnaire d'exceptions personnalisé ferait sinon sortir le script avec le code 0.
+            exit(1);
         }
         if (!headers_sent()) {
             http_response_code(500);

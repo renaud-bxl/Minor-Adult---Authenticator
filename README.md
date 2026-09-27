@@ -43,6 +43,12 @@ php bin/migrate.php                              # applique database/migrations/
 php -S 127.0.0.1:8000 -t public public/index.php # http://127.0.0.1:8000/
 ```
 
+En production (`APP_ENV=production`), l'application refuse de démarrer si la configuration est
+incomplète (URL https, clés, SMTP, cookie Secure, inactivité de session ≤ 30 min, PHP-FPM).
+
+Sous `php -S`, une variable exportée dans le shell ne prime sur `.env` qu'avec
+`php -d variables_order=EGPCS -S …` (phpdotenv ne lit pas `getenv()`).
+
 ## Commandes
 
 | Commande | Rôle |

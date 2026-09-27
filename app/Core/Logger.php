@@ -21,7 +21,11 @@ final class Logger
 
     private readonly int $threshold;
 
-    public function __construct(private readonly string $directory, string $minLevel = 'info')
+    /**
+     * @param int $retentionDays rotation quotidienne (un fichier par jour UTC) ; les fichiers plus
+     *                           anciens sont supprimés à la première écriture de chaque jour (0 : jamais)
+     */
+    public function __construct(private readonly string $directory, string $minLevel = 'info', private readonly int $retentionDays = 30)
     {
         $this->threshold = self::LEVELS[$minLevel] ?? self::LEVELS['info'];
     }
@@ -69,14 +73,32 @@ final class Logger
         }
         // En cas d'échec d'écriture, on ne masque pas l'incident : il remonte dans le journal d'erreurs PHP.
         $file = $this->directory . '/app-' . gmdate('Y-m-d') . '.log';
+        if (!is_file($file)) {
+            $this->purgeExpired();
+        }
         if (@file_put_contents($file, $line . "\n", FILE_APPEND | LOCK_EX) === false) {
             error_log('VeriAge: impossible d\'écrire dans ' . $file);
         }
     }
 
+    /** Supprime les journaux quotidiens plus anciens que la durée de rétention (RGPD : minimisation). */
+    public function purgeExpired(): void
+    {
+        if ($this->retentionDays <= 0) {
+            return;
+        }
+        $limit = gmdate('Y-m-d', time() - $this->retentionDays * 86400);
+        foreach (glob($this->directory . '/app-*.log') ?: [] as $file) {
+            if (preg_match('/app-(\d{4}-\d{2}-\d{2})\.log$/', $file, $m) === 1 && $m[1] < $limit) {
+                @unlink($file);
+            }
+        }
+    }
+
     /**
      * Contexte sûr pour journaliser une exception : classe, fichier, ligne et pile sans arguments.
-     * Le message des PDOException est écarté, car il peut contenir des valeurs (ex. e-mail en doublon).
+     * Le message des PDOException est écarté, car il peut contenir des valeurs (ex. e-mail en doublon) :
+     * seuls le SQLSTATE et le code d'erreur du SGBD sont conservés.
      *
      * @return array<string, mixed>
      */
@@ -90,7 +112,9 @@ final class Logger
 
         return [
             'exception' => $e::class,
-            'message' => $e instanceof \PDOException ? 'SQLSTATE ' . (string) $e->getCode() : $e->getMessage(),
+            'message' => $e instanceof \PDOException
+                ? 'SQLSTATE ' . (string) ($e->errorInfo[0] ?? $e->getCode()) . ', code ' . (string) ($e->errorInfo[1] ?? '-')
+                : $e->getMessage(),
             'file' => $e->getFile() . ':' . $e->getLine(),
             'trace' => $frames,
             'previous' => $e->getPrevious() !== null ? $e->getPrevious()::class : null,

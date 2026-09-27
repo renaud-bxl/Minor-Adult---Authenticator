@@ -54,6 +54,11 @@ final class Mailer
         $mail->CharSet = PHPMailer::CHARSET_UTF8;
         $mail->Encoding = PHPMailer::ENCODING_QUOTED_PRINTABLE;
         $mail->XMailer = ' ';
+        if ((string) ($this->config['hostname'] ?? '') !== '') {
+            $mail->Hostname = (string) $this->config['hostname'];
+        }
+        // RFC 3834 : message automatique (pas de réponse automatique en retour, pas d'accusé d'absence).
+        $mail->addCustomHeader('Auto-Submitted', 'auto-generated');
         $mail->setLanguage($locale);
         $mail->setFrom((string) $this->config['from_address'], (string) $this->config['from_name']);
         $mail->addAddress($to);

@@ -141,7 +141,12 @@ final class AuthService
         }
         $userId = $this->tokens->consume(UserTokenRepository::EMAIL_VERIFICATION, $token);
         if ($userId === null) {
-            return false;
+            // Lien déjà suivi (souvent par un scanner de liens de la messagerie, avant l'utilisateur) :
+            // succès idempotent si l'adresse est bien vérifiée. Seul le détenteur du jeton le sait.
+            $usedBy = $this->tokens->findUsed(UserTokenRepository::EMAIL_VERIFICATION, $token);
+            $user = $usedBy === null ? null : $this->users->findById($usedBy);
+
+            return $user !== null && $user['email_verified_at'] !== null;
         }
         $this->users->markEmailVerified($userId);
         $this->audit->record('auth.email_verified', $userId, null, $ip);

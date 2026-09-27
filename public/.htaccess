@@ -1,10 +1,21 @@
 # Apache (HestiaCP) : tout ce qui n'est pas un fichier statique passe par le contrôleur frontal.
+# Directives locales au docroot du projet uniquement (aucun effet sur les autres sites du serveur).
 Options -Indexes -MultiViews
+
+# Transmettre l'en-tête Authorization à PHP-FPM (API Bearer, phase 2). Apache ≥ 2.4.13.
+<IfModule mod_version.c>
+    <IfVersion >= 2.4.13>
+        CGIPassAuth On
+    </IfVersion>
+</IfModule>
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    # Fichiers cachés (.env, .git…) : jamais servis.
-    RewriteRule (^|/)\. - [F,L]
+    # Repli si CGIPassAuth est indisponible : Request lit REDIRECT_HTTP_AUTHORIZATION.
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+    # Fichiers et dossiers cachés (.env, .git…) : jamais servis, sauf /.well-known/ (ACME, security.txt).
+    RewriteRule (^|/)\.(?!well-known(/|$)) - [F,L]
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
 </IfModule>

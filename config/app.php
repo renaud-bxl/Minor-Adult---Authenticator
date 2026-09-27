@@ -15,4 +15,6 @@ return [
     'key' => (string) env('APP_KEY', ''),
     'log_level' => (string) env('LOG_LEVEL', 'info'),
     'log_path' => 'storage/logs',
+    // Rétention des journaux applicatifs (jours), purge automatique à la rotation quotidienne.
+    'log_retention_days' => (int) env('LOG_RETENTION_DAYS', 30),
 ];

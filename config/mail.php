@@ -11,5 +11,7 @@ return [
     'password' => (string) env('MAIL_PASSWORD', ''),
     'from_address' => (string) env('MAIL_FROM_ADDRESS', ''),
     'from_name' => (string) env('MAIL_FROM_NAME', 'VeriAge'),
+    // Nom d'hôte du Message-ID et du HELO SMTP (sinon PHPMailer prend le nom de la machine).
+    'hostname' => (string) env('APP_DOMAIN', ''),
     'outbox' => (string) env('MAIL_OUTBOX', 'storage/mail'),
 ];

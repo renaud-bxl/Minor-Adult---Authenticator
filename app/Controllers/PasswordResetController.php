@@ -7,6 +7,8 @@ namespace App\Controllers;
 use App\Core\Crypto;
 use App\Core\Request;
 use App\Core\Response;
+use App\Core\TextInput;
+use App\Models\AccountRepository;
 use App\Services\AuthService;
 
 /** Mot de passe oublié (demande de lien) et réinitialisation (jeton valable 1 h). */
@@ -19,13 +21,14 @@ final class PasswordResetController extends Controller
 
     public function sendResetLink(Request $request): Response
     {
-        $email = trim($request->input('email'));
+        $display = TextInput::forDisplay(trim($request->input('email')));
         $byIp = $this->throttleIp('password_reset_ip', $request);
         if (!$byIp->allowed) {
-            return $this->throttled($this->forgotForm($email, $this->throttledMessage($byIp), 429), $byIp);
+            return $this->throttled($this->forgotForm($display, $this->throttledMessage($byIp), 429), $byIp);
         }
-        if (!self::isValidEmail($email)) {
-            return $this->forgotForm($email, __('site.validation.email_invalid'), 422);
+        $email = self::validEmail($request->input('email'));
+        if ($email === null) {
+            return $this->forgotForm($display, __('site.validation.email_invalid'), 422);
         }
 
         // Au-delà du quota par adresse, on répond comme d'habitude sans renvoyer d'e-mail :
@@ -37,7 +40,8 @@ final class PasswordResetController extends Controller
             [$locale, $ip] = [locale(), $request->ip()];
             $this->app->defer(static fn () => $auth->requestPasswordReset($email, $locale, $ip));
         }
-        $request->session()->flash('info', 'site.forgot.sent');
+        $minutes = intdiv((int) $this->app->config->get('security.tokens.password_reset_ttl'), 60);
+        $request->session()->flash('info', ['site.forgot.sent', ['minutes' => $minutes]]);
 
         return $this->redirectTo('/login');
     }
@@ -63,7 +67,8 @@ final class PasswordResetController extends Controller
 
         $password = $request->input('password');
         $errors = [];
-        $policyError = $this->passwordPolicy()->validate($password, (string) $user['email']);
+        $account = (new AccountRepository($this->app->db()))->findPrimaryForUser((int) $user['id']);
+        $policyError = $this->passwordPolicy()->validate($password, [(string) $user['email'], (string) ($account['name'] ?? '')]);
         if ($policyError !== null) {
             $errors['password'] = __($policyError[0], $policyError[1]);
         } elseif (!hash_equals($password, $request->input('password_confirmation'))) {

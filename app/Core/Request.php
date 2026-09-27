@@ -45,6 +45,11 @@ final class Request
         if (isset($_SERVER['CONTENT_TYPE'])) {
             $headers['content-type'] = (string) $_SERVER['CONTENT_TYPE'];
         }
+        // Apache + PHP-FPM ne transmet pas toujours Authorization tel quel : la règle de réécriture
+        // de public/.htaccess la place dans REDIRECT_HTTP_AUTHORIZATION (API Bearer, phase 2).
+        if (!isset($headers['authorization']) && is_string($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null) && $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] !== '') {
+            $headers['authorization'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+        }
 
         $path = parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
 

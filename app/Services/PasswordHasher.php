@@ -14,12 +14,23 @@ final class PasswordHasher
 
     public function hash(string $password): string
     {
-        return password_hash($password, PASSWORD_ARGON2ID, $this->options);
+        return password_hash(self::normalize($password), PASSWORD_ARGON2ID, $this->options);
     }
 
     public function verify(string $password, string $hash): bool
     {
-        return password_verify($password, $hash);
+        return password_verify(self::normalize($password), $hash);
+    }
+
+    /**
+     * Normalisation NFC avant hachage (NIST SP 800-63B §5.1.1.2) : un même mot de passe saisi sur
+     * deux claviers ou systèmes (« é » précomposé ou décomposé) donne le même hash.
+     */
+    private static function normalize(string $password): string
+    {
+        $normalized = \Normalizer::normalize($password, \Normalizer::FORM_C);
+
+        return is_string($normalized) ? $normalized : $password;
     }
 
     public function needsRehash(string $hash): bool

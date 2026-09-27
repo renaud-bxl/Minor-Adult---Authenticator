@@ -15,7 +15,8 @@ return [
     'trusted_proxies' => array_values(array_filter(array_map('trim', explode(',', (string) env('TRUSTED_PROXIES', ''))))),
 
     'session' => [
-        'idle_minutes' => (int) env('SESSION_IDLE_MINUTES', 120),
+        // ASVS V3.3.2 (niveau 2) : réauthentification après 30 minutes d'inactivité.
+        'idle_minutes' => (int) env('SESSION_IDLE_MINUTES', 30),
         'absolute_minutes' => (int) env('SESSION_ABSOLUTE_MINUTES', 720),
         'secure_cookie' => (bool) env('SESSION_SECURE_COOKIE', true),
     ],
@@ -24,6 +25,8 @@ return [
         'min_length' => 12,
         // Borne haute : évite qu'un mot de passe géant serve à saturer Argon2id.
         'max_length' => 1024,
+        // Liste locale des mots de passe courants ou compromis (voir PasswordBlocklist).
+        'blocklist' => 'resources/security/common-passwords.txt',
         'argon2' => [
             'memory_cost' => (int) env('PASSWORD_ARGON2_MEMORY', 65536),
             'time_cost' => (int) env('PASSWORD_ARGON2_TIME', 4),

@@ -67,9 +67,10 @@ $flashes = array_filter([
         </nav>
 
         <details class="lang-switcher">
-            <summary aria-label="<?= e(__('site.nav.language')) ?>">
+            <summary>
                 <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 0c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9m0-18C9.5 5.6 8.2 8.6 8.2 12s1.3 6.4 3.8 9M3.5 9h17M3.5 15h17"/></svg>
                 <span><?= e(strtoupper(locale())) ?></span>
+                <span class="visually-hidden"><?= e(__('site.nav.language')) ?></span>
             </summary>
             <ul>
 <?php foreach ($enabledLanguages as $code): ?>
@@ -85,7 +86,7 @@ $flashes = array_filter([
 <main id="main" class="container main">
 <?php foreach ($flashes as $type => $key): ?>
     <div class="flash flash-<?= e($type) ?>" role="<?= $type === 'error' ? 'alert' : 'status' ?>">
-        <p><?= e(__((string) $key)) ?></p>
+        <p><?= e(is_array($key) ? __((string) $key[0], (array) ($key[1] ?? [])) : __((string) $key)) ?></p>
         <button type="button" class="flash-close" data-dismiss hidden aria-label="<?= e(__('site.common.close')) ?>">×</button>
     </div>
 <?php endforeach; ?>

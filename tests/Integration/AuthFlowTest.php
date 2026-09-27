@@ -59,7 +59,10 @@ final class AuthFlowTest extends IntegrationTestCase
         self::assertSame(302, $response->status());
         self::assertSame('/fr/login', $response->header('Location'));
         self::assertNotNull($this->app->db()->fetchOne('SELECT email_verified_at FROM users')['email_verified_at']);
-        self::assertSame(400, $client->get($verifyUrl)->status(), 'jeton déjà consommé');
+        // Lien suivi une seconde fois (ex. scanner de liens de la messagerie) : succès idempotent.
+        $again = $client->get($verifyUrl);
+        self::assertSame(302, $again->status(), 'jeton déjà consommé, adresse vérifiée');
+        self::assertStringContainsString('adresse e-mail est confirmée', $client->get('/fr/login')->body());
 
         // 4. Connexion : nouvel identifiant de session, tableau de bord accessible.
         $client->get('/fr/login');

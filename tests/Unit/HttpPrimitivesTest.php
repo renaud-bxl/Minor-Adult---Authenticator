@@ -41,6 +41,31 @@ final class HttpPrimitivesTest extends TestCase
         self::assertSame('', $request->query('q'));
     }
 
+    public function testAuthorizationHeaderIsRecoveredBehindApacheRewrite(): void
+    {
+        $backup = $_SERVER;
+        try {
+            $_SERVER = ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/api/v1/x', 'REDIRECT_HTTP_AUTHORIZATION' => 'Bearer sk_test_abc'];
+            self::assertSame('Bearer sk_test_abc', Request::fromGlobals()->header('Authorization'));
+            $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer direct';
+            self::assertSame('Bearer direct', Request::fromGlobals()->header('Authorization'), 'l\'en-tête direct prime');
+        } finally {
+            $_SERVER = $backup;
+        }
+    }
+
+    public function testHtaccessDeniesDotfilesButNotWellKnown(): void
+    {
+        $htaccess = (string) file_get_contents(dirname(__DIR__, 2) . '/public/.htaccess');
+        self::assertSame(1, preg_match('/^\s*RewriteRule (\S+) - \[F,L\]/m', $htaccess, $m));
+        $pattern = '#' . $m[1] . '#';
+        self::assertSame(1, preg_match($pattern, '.env'));
+        self::assertSame(1, preg_match($pattern, 'assets/.git/config'));
+        self::assertSame(0, preg_match($pattern, '.well-known/acme-challenge/abc'));
+        self::assertSame(0, preg_match($pattern, '.well-known/security.txt'));
+        self::assertStringContainsString('CGIPassAuth On', $htaccess);
+    }
+
     public function testPathNormalization(): void
     {
         self::assertSame('/', Request::normalizePath(''));
@@ -112,6 +137,9 @@ final class HttpPrimitivesTest extends TestCase
         // Pas de faux positif sur les appels statiques, heures ou « :: » isolés.
         self::assertSame('App\\Core\\Crypto::decodeKey à 19:29:27 ::', Logger::redact('App\\Core\\Crypto::decodeKey à 19:29:27 ::'));
         $context = Logger::exceptionContext(new \PDOException("Duplicate entry 'a@b.be' for key 'uq_users_email'", 23000));
-        self::assertSame('SQLSTATE 23000', $context['message']);
+        self::assertSame('SQLSTATE 23000, code -', $context['message']);
+        $pdo = new \PDOException("Duplicate entry 'a@b.be' for key 'uq_users_email'");
+        $pdo->errorInfo = ['23000', 1062, "Duplicate entry 'a@b.be'"];
+        self::assertSame('SQLSTATE 23000, code 1062', Logger::exceptionContext($pdo)['message']);
     }
 }

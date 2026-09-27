@@ -71,6 +71,7 @@ final class Application
         return $this->logger ??= new Logger(
             $this->path((string) $this->config->get('app.log_path')),
             (string) $this->config->get('app.log_level', 'info'),
+            (int) $this->config->get('app.log_retention_days', 30),
         );
     }
 

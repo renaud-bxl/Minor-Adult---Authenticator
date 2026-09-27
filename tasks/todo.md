@@ -24,7 +24,7 @@ Légende : `[ ]` à faire · `[~]` en cours · `[x]` terminé (avec preuve) · `
 
 ## Phase 1 : Fondations  ← IMPLÉMENTÉE (créateur, 2026-09-27), en attente de contrôle et d'audit
 Objectif : squelette MVC fonctionnel, i18n FR+EN, authentification des comptes clients, layout. Aucune logique de vérification.
-Preuves : `vendor/bin/phpunit` → OK (après contrôle : 118 tests, 443 assertions : unit 85/192, integration 33/251) ; `php tools/check_translations.php` → 100 % fr et en ; cURL dans `docs/api-tests.md` ; captures dans `docs/screenshots/phase-1/`.
+Preuves : `vendor/bin/phpunit` → OK (après corrections de l'audit : 168 tests, 711 assertions : unit 128/421, integration 40/290) ; `php tools/check_translations.php` → 100 % fr et en ; cURL dans `docs/api-tests.md` ; captures dans `docs/screenshots/phase-1/`.
 
 ### 1.1 Projet et configuration
 - [x] `composer.json` : PHP ≥ 8.2 (plateforme figée à 8.2.0 pour le lock), PSR-4 `App\` → `app/`. Dépendances : `vlucas/phpdotenv` 5.7, `phpmailer/phpmailer` 6.12, `predis/predis` 2.4. Dev : `phpunit/phpunit` 11.5 (justifié : tests exigés par la section 9 ; 11.x car la 12 exige PHP 8.3).
@@ -57,28 +57,39 @@ Preuves : `vendor/bin/phpunit` → OK (après contrôle : 118 tests, 443 asserti
 - [x] `tools/check_translations.php` : manquantes, orphelines, paramètres `{x}` divergents, scan du code (clés inconnues), `--all`, code retour ≠ 0 si < 100 %.
 
 ### 1.5 Authentification des comptes clients
-- [x] Inscription (entreprise + e-mail + mot de passe ; Argon2id, 12 caractères min., 1 024 max., ≠ e-mail) ; e-mail de validation (jeton à usage unique, 24 h). Adresse déjà inscrite : même réponse + e-mail d'information au titulaire.
+- [x] Inscription (entreprise + e-mail + mot de passe ; Argon2id, 12 caractères min., 1 024 max.) ; e-mail de validation (jeton à usage unique, 24 h). Adresse déjà inscrite : même réponse + e-mail d'information au titulaire.
 - [x] Connexion / déconnexion, rate limiting (IP et e-mail), message générique, temps de réponse comparable (hash factice), connexion refusée tant que l'adresse n'est pas confirmée (lien renvoyé, limité à 3/h).
 - [x] Mot de passe oublié / réinitialisation (jeton 1 h, consommation atomique, invalidation de toutes les sessions via `auth_version`, e-mail « mot de passe modifié »).
 - [x] `App\Services\Mailer` : PHPMailer SMTP, gabarits HTML + texte traduits ; `MAIL_DRIVER=log` écrit le MIME dans `storage/mail/` (interdit en production), destinataires jamais journalisés.
 - [x] Tableau de bord minimal protégé (« Bienvenue, {entreprise} »).
 - [ ] 2FA TOTP : phase 5 (voir plus bas).
+- [x] Corrections de l'audit critique (2026-09-27, suivi : `tasks/reviews/phase-1-critique-suivi.md`) :
+  - Politique de mot de passe (ASVS V2.1.7, NIST 800-63B) : liste locale de 142 515 mots de passe courants ou compromis (`resources/security/common-passwords.txt`, recherche dichotomique, aucun appel externe), mot courant décoré (« !Sunshine2026 »), suites et répétitions, contexte (nom du service, e-mail, raison sociale), NFC avant hachage. Preuves : `PasswordPolicyTest`, `InputHardeningTest`.
+    Source de la liste : union dédupliquée, en minuscules NFC, entrées ≥ 4 caractères, triée par octets, de `100k-most-used-passwords-NCSC.txt` (NCSC britannique, issu de Have I Been Pwned) et `xato-net-10-million-passwords-100000.txt`, dépôt SecLists (`Passwords/Common-Credentials`, licence MIT). Dépendance de données justifiée : exigence ASVS niveau 1.
+    Régénération : `cat ncsc.txt xato.txt | tr -d '\r'` puis minuscules + NFC + tri par octets (`LC_ALL=C sort -u`) ; le test `testBlocklistLookupIsExact` vérifie le tri.
+  - Inactivité de session : 30 min par défaut (ASVS V3.3.2), refus de démarrer en production au-delà. Preuve : `InputHardeningTest::testSessionIdleTimeoutIsThirtyMinutes`.
+  - Champs texte : `App\Core\TextInput` (UTF-8 valide, NFC, refus Cc/Cf/Zl/Zp dont bidi et sauts de ligne, espaces compactés), appliqué à la raison sociale et aux e-mails (inscription, connexion, mot de passe oublié) ; erreur 422 traduite, plus de faux succès. Preuves : `TextInputTest`, `InputHardeningTest`.
+  - Contrastes WCAG 1.4.11 : bordure des champs 4,01:1 (clair) / 4,44:1 (sombre), focus ≥ 4,47:1 / ≥ 8,98:1. Preuve : `FrontendContrastTest` + captures (focus, erreurs, mode sombre).
 
 ### 1.6 Layout et front
 - [x] Layout sémantique, CSS vanilla (variables, responsive, mode sombre), sélecteur de langue sans JS (`details`), messages flash, pages 404/405/419/429/500 traduites, lien d'évitement, attributs ARIA sur les erreurs de formulaire.
 - [x] JS vanilla minimal (`public/assets/js/app.js`, aucun script inline, libellés via `data-*` traduits).
 
 ### 1.7 Vérification de la phase 1 (preuves)
-- [x] PHPUnit unitaires : Router, Translator, LocaleNegotiator (Accept-Language), Crypto, Session, Csrf, PasswordPolicy/Argon2id, Migrator, Formatter, primitives HTTP/Logger/IP → OK (80 tests, 169 assertions).
-- [x] Intégration MariaDB 10.11 + Redis 7 réels : inscription → validation → connexion → réinitialisation → sessions invalidées, anti-énumération, 429, CSRF, langues, API i18n, 500 générique (Redis coupé), migrations → OK (24 tests, 197 assertions).
-- [x] `php tools/check_translations.php` → 100 % fr (135/135) et en (135/135), 0 clé inconnue.
+- [x] PHPUnit unitaires : Router, Translator, LocaleNegotiator (Accept-Language), Crypto, Session, Csrf, PasswordPolicy/Argon2id, Migrator, Formatter, primitives HTTP/Logger/IP, TextInput, liste de blocage, ConfigValidator, rétention des journaux, contrastes CSS → OK (128 tests, 421 assertions).
+- [x] Intégration MariaDB 10.11 + Redis 7 réels : inscription → validation → connexion → réinitialisation → sessions invalidées, anti-énumération, 429, CSRF, langues, API i18n, 500 générique (Redis coupé), migrations, champs texte invalides, mots de passe courants/contextuels, inactivité 30 min → OK (40 tests, 290 assertions).
+- [x] `php tools/check_translations.php` → 100 % fr (138/138) et en (138/138), 0 clé inconnue.
 - [x] `php -S` + cURL (`docs/api-tests.md`) : en-têtes présents, `/` → `/fr/` ou `/en/` selon Accept-Language, POST sans CSRF → 419, 6e tentative → 429 (`Retry-After`).
-- [x] Captures Playwright (Chromium) : accueil, inscription, connexion × FR/EN × desktop (1366 px)/mobile (390 px) → `docs/screenshots/phase-1/` (12 fichiers).
+- [x] Captures Playwright (Chromium, `tools/screenshots.py`) → `docs/screenshots/phase-1/` (43 fichiers) : accueil, inscription, connexion × FR/EN × desktop (1366 px)/mobile (390 px) × clair/sombre ; focus clavier, erreurs de formulaire, mot de passe oublié, 404 (FR/EN, clair/sombre) ; tableau de bord (FR clair/sombre, EN).
 
 ### Limites connues (à traiter plus tard)
 - [x] ~~Envoi des e-mails synchrone~~ (contrôleur) : inscription, mot de passe oublié et renvoi de validation exécutés après la réponse (`Application::defer` + `fastcgi_finish_request`). La file Redis + worker (phase 2) pourra reprendre ces traitements.
 - [x] ~~Verrouillage par adresse e-mail exploitable par un tiers~~ (contrôleur) : compteurs par IP (/64 en IPv6), par couple adresse + IP (5 / 15 min) et plafond global par adresse (20 / h). Un tiers a besoin de plusieurs IP pour bloquer un compte une heure ; à réévaluer avec la 2FA (phase 5).
-- [ ] Purge des jetons expirés et rétention du journal d'audit : cron (phase 2 ou 10).
+- [ ] Purge des jetons expirés, des comptes jamais validés (7 jours) et rétention du journal d'audit : cron (phase 2 ou 10).
+- [x] Rétention des journaux applicatifs : rotation quotidienne, purge automatique au-delà de `LOG_RETENTION_DAYS` (30). Preuve : `LoggerRetentionTest`.
+- [x] Contrôle de configuration au démarrage en production (`ConfigValidator` : APP_URL https, clés, SMTP, cookie Secure, inactivité ≤ 30 min, PHP-FPM) ; code retour CLI 1. Preuve : `ConfigValidatorTest`.
+- [ ] ⚖️ Textes de l'accueil (promesses de confidentialité) : allégations non prouvées retirées (« Conforme au RGPD », langues, eID au présent) ; relecture juridique avant mise en ligne publique.
+- [ ] Pluriels ICU (`MessageFormatter`) avant la phase 8 ; préférence de langue du compte via formulaire POST (phase 5) ; routage par hôte et corps JSON (phase 2) ; URL canoniques (phase 9) ; `maxmemory` + éviction sur l'instance Redis dédiée (phase 0).
 - [ ] `php -S` ne pose pas les en-têtes de sécurité sur les fichiers statiques ; en production : template Hestia (phase 0).
 - [ ] Dossiers `app/Verification`, `app/Billing`, `cron/`, `deploy/` encore vides (phases suivantes).
 

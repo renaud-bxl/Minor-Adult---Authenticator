@@ -7,8 +7,10 @@ namespace App\Controllers;
 use App\Core\Application;
 use App\Core\IpAddress;
 use App\Core\RateLimitResult;
+use App\Core\TextInput;
 use App\Core\Request;
 use App\Core\Response;
+use App\Services\PasswordBlocklist;
 use App\Services\PasswordPolicy;
 
 abstract class Controller
@@ -60,16 +62,27 @@ abstract class Controller
 
     protected function passwordPolicy(): PasswordPolicy
     {
+        $config = $this->app->config;
+
         return new PasswordPolicy(
-            (int) $this->app->config->get('security.password.min_length'),
-            (int) $this->app->config->get('security.password.max_length'),
+            (int) $config->get('security.password.min_length'),
+            (int) $config->get('security.password.max_length'),
+            new PasswordBlocklist($this->app->path((string) $config->get('security.password.blocklist'))),
+            // Nom du service et domaine : jamais acceptés dans un mot de passe.
+            [(string) $config->get('app.name'), 'veriage', explode('.', (string) $config->get('app.domain'))[0]],
         );
     }
 
-    protected static function isValidEmail(string $email): bool
+    /**
+     * Adresse e-mail saisie, normalisée par TextInput, ou null si elle est invalide.
+     */
+    protected static function validEmail(string $raw): ?string
     {
-        return $email !== ''
+        $email = TextInput::normalize($raw);
+
+        return $email !== null
+            && $email !== ''
             && strlen($email) <= self::EMAIL_MAX_LENGTH
-            && filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+            && filter_var($email, FILTER_VALIDATE_EMAIL) !== false ? $email : null;
     }
 }
