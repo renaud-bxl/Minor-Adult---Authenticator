@@ -166,6 +166,10 @@ images), `MemoryMax=2G`.
 
 ```bash
 useradd --system --home /nonexistent --shell /usr/sbin/nologin veriage-bio
+# Le home Hestia n'est pas ouvert aux autres comptes : traversée seule pour veriage-bio, puis lecture de biometrics/.
+# Vérifier : sudo -u veriage-bio test -r /home/veriage/web/compose-web.net/app/biometrics/models/face_landmarker.task
+setfacl -m u:veriage-bio:x /home/veriage /home/veriage/web /home/veriage/web/compose-web.net /home/veriage/web/compose-web.net/app
+setfacl -R -m u:veriage-bio:rX /home/veriage/web/compose-web.net/app/biometrics
 install -m 0644 deploy/systemd/veriage-biometrics.service /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now veriage-biometrics
 php bin/biometrics.php health   # requête et réponse signées ; code retour 0 si tout est chargé

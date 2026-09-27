@@ -13,7 +13,7 @@ import sys
 import uvicorn
 
 from .analysis import Services
-from .api import create_app
+from .api import NoTraceback, create_app
 from .config import ConfigError, Settings
 from .faces import FaceEngine
 from .liveness import Landmarker
@@ -37,6 +37,10 @@ def build_services(settings: Settings) -> Services:
 
 def main() -> int:
     logging.basicConfig(level=os.environ.get("BIOMETRICS_LOG_LEVEL", "INFO"), format="%(levelname)s %(name)s %(message)s")
+    # Un seul gestionnaire (celui-ci, sur la racine) pour tous les journaux, Uvicorn compris
+    # (log_config=None ci-dessous) : aucune pile d'exception n'atteint journald.
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(NoTraceback())
     try:
         settings = Settings.from_env()
         services = build_services(settings)
@@ -44,7 +48,7 @@ def main() -> int:
         print(f"veriage-biometrics : {exc}", file=sys.stderr)
         return 2
     app = create_app(settings, services)
-    uvicorn.run(app, host=settings.host, port=settings.port, workers=1, access_log=False, log_level="warning",
+    uvicorn.run(app, host=settings.host, port=settings.port, workers=1, access_log=False, log_level="warning", log_config=None,
                 server_header=False, date_header=False, proxy_headers=False, limit_concurrency=32,
                 timeout_keep_alive=5)
     if services.landmarker is not None:

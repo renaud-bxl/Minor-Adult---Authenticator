@@ -1,4 +1,5 @@
-"""MRZ : chiffres de contrôle 7-3-1, formats TD1/TD2/TD3, âge exact, expiration (vecteurs partagés avec PHP)."""
+"""MRZ : chiffres de contrôle 7-3-1, formats TD1/TD2/TD3, âge exact, expiration. La MRZ ne sort jamais du
+service : seule la règle d'âge est partagée avec PHP (tests/Unit/AgeCalculatorTest.php lit ces vecteurs)."""
 import datetime as dt
 import json
 from pathlib import Path
@@ -94,3 +95,32 @@ def test_candidate_lines_from_noisy_ocr_text():
     candidates = mrz.candidate_lines(text)
     assert candidates and all(len(line) == 30 for line in candidates[0])
     assert mrz.parse(candidates[0], dt.date(2026, 9, 27)).valid
+
+
+def test_real_layout_german_id_with_filler_sex_and_short_state():
+    """Carte d'identité allemande (spécimen public « Mustermann ») : État « D<< », sexe « < »."""
+    lines = ["IDD<<T220001293<<<<<<<<<<<<<<<", "6408125<2010315D<<<<<<<<<<<<<4", "MUSTERMANN<<ERIKA<<<<<<<<<<<<<"]
+    data = mrz.parse(lines, dt.date(2026, 9, 27))
+    assert data.valid and data.format == "TD1"
+    assert data.birth_date == dt.date(1964, 8, 12) and data.expiry_date == dt.date(2020, 10, 31)
+
+
+def test_td1_long_document_number_overflows_into_the_optional_field():
+    """ICAO 9303-5 : numéro de plus de 9 caractères, « < » en position 15, suite et chiffre de contrôle
+    dans la zone facultative ; le composite porte sur la ligne telle qu'imprimée."""
+    number, overflow = "D23145890", "734"
+    digit = mrz.check_digit(number + overflow)
+    line1 = ("I<UTO" + number + "<" + overflow + digit + "<" * 30)[:30]
+    line2 = "7408122F260415" + mrz.check_digit("260415") + "UTO<<<<<<<<<<<"
+    line2 += mrz.check_digit(line1[5:30] + line2[0:7] + line2[8:15] + line2[18:29])
+    data = mrz.parse([line1, line2, "ERIKSSON<<ANNA<MARIA<<<<<<<<<<"], dt.date(2026, 9, 27))
+    assert data.valid and dict(data.checks)["document_number"] is True
+
+
+def test_expiry_century_and_unknown_birth_parts_are_prudent():
+    today = dt.date(2026, 9, 27)
+    assert mrz.expiry_date("760101", today) == dt.date(2076, 1, 1)
+    assert mrz.expiry_date("770101", today) == dt.date(1977, 1, 1)  # au-delà de 50 ans : siècle précédent
+    # Mois et jour inconnus : date la plus tardive possible (âge le plus bas).
+    assert mrz.birth_date("08<<<<", today) == dt.date(2008, 12, 31)
+    assert mrz.age_on(mrz.birth_date("08<<<<", today), today) == 17

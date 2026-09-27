@@ -31,6 +31,27 @@ final class AgeCalculatorTest extends TestCase
         self::assertSame($age >= 18, AgeCalculator::isAtLeast(new \DateTimeImmutable($birth), new \DateTimeImmutable($today), 18));
     }
 
+    /**
+     * Même règle d'âge et d'expiration que le microservice : vecteurs de biometrics/tests/fixtures/mrz_vectors.json
+     * (la MRZ elle-même ne sort jamais du service ; seule la règle est partagée, elle resservira à l'eID).
+     */
+    public function testSameAgeRuleAsTheBiometricsService(): void
+    {
+        $data = json_decode((string) file_get_contents(dirname(__DIR__, 2) . '/biometrics/tests/fixtures/mrz_vectors.json'), true, 32, JSON_THROW_ON_ERROR);
+        $checked = 0;
+        foreach ($data['vectors'] as $vector) {
+            $expected = $vector['expected'];
+            if (($expected['valid'] ?? false) !== true) {
+                continue;
+            }
+            $today = new \DateTimeImmutable($vector['reference_date']);
+            self::assertSame($expected['age'], AgeCalculator::age(new \DateTimeImmutable($expected['birth_date']), $today), $vector['name']);
+            self::assertSame($expected['expired'], AgeCalculator::isExpired(new \DateTimeImmutable($expected['expiry_date']), $today), $vector['name']);
+            $checked++;
+        }
+        self::assertGreaterThan(5, $checked);
+    }
+
     public function testBirthInTheFutureIsRejected(): void
     {
         $this->expectException(\InvalidArgumentException::class);

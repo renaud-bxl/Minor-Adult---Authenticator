@@ -7,6 +7,7 @@ namespace Tests\Unit;
 use App\Models\VerificationSession;
 use App\Verification\Biometrics\AnalysisResult;
 use App\Verification\Biometrics\BiometricsClient;
+use App\Verification\Biometrics\BiometricsException;
 use App\Verification\Biometrics\CapturePayload;
 use App\Verification\Methods\LocalBiometricsProvider;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -75,8 +76,12 @@ final class LocalBiometricsProviderTest extends TestCase
     {
         $fake = new FakeBiometricsService(self::SECRET);
         $fake->down = true;
-        $outcome = self::provider($fake)->verify(self::session(), ['capture' => self::capture(), 'challenge' => ['blink']]);
-        self::assertSame('biometrics_unavailable', $outcome->failureReason);
+        try {
+            self::provider($fake)->verify(self::session(), ['capture' => self::capture(), 'challenge' => ['blink']]);
+            self::fail('Panne technique : aucune décision, exception attendue.');
+        } catch (BiometricsException $e) {
+            self::assertSame(BiometricsException::UNAVAILABLE, $e->reason);
+        }
         $fake->down = false;
         $fake->status = 422;
         $fake->response = ['error' => 'image_invalid'];

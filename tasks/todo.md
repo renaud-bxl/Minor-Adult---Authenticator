@@ -7,7 +7,7 @@ Légende : `[ ]` à faire · `[~]` en cours · `[x]` terminé (avec preuve) · `
 - [x] Plan de la phase 1 validé (protocole multi-agents, 2026-09-27).
 - [x] **Phase 1 APPROUVÉE par le critique** (168 tests verts ; `tasks/reviews/phase-1-*.md`).
 - [x] **Phase 2 APPROUVÉE par le critique** (263 tests + E2E 34/34 ; `tasks/reviews/phase-2-*.md`).
-- [~] Phase 3 implémentée par le créateur (document + visage, biométrie 100 % locale), en attente de contrôle et d'audit.
+- [~] Phase 3 implémentée (document + visage, biométrie 100 % locale) et contrôlée (`tasks/reviews/phase-3-controle.md`), en attente d'audit.
 
 ---
 
@@ -162,7 +162,7 @@ Dépendance ajoutée : `firebase/php-jwt` **7.2** (autorisée par CLAUDE.md ; la
 - [x] ~~Rotation de `CRYPTO_KEY`~~ (contrôleur) : trousseau versionné (`CRYPTO_KEY_VERSION`, `CRYPTO_PREVIOUS_KEYS`, contrôlés au démarrage), `bin/reencrypt.php` (idempotent). Procédure : `App\Services\KeyRotation`, cURL §14. Preuves : `CryptoTest` (2 tests), `OperationsTest::testCryptoKeyRotationRewritesEveryCiphertext`, `ConfigValidatorTest`.
 - [ ] Widget : sans accès à `/api/v1/i18n`, le bouton généré (`data-autoopen="false"`) reste sans libellé (aucune chaîne en dur par règle) ; libellé fourni par l'intégrateur via `data-trigger`.
 
-## Phase 3 : Document d'identité + visage (100 % local)  ← IMPLÉMENTÉE (créateur, 2026-09-27), en attente de contrôle et d'audit
+## Phase 3 : Document d'identité + visage (100 % local)  ← IMPLÉMENTÉE (créateur) puis CONTRÔLÉE (contrôleur, 2026-09-27), en attente d'audit
 Preuves : `vendor/bin/phpunit` → OK (343 tests, 2 091 assertions ; unit 225, intégration 118, dont PHP → Python réel) ;
 `biometrics/.venv/bin/python -m pytest -q` → 96 passed ; `php tools/check_translations.php` → 100 % fr et en (361 clés) ;
 `python3 tools/e2e_capture.py` → 9/9 (Chromium réel) ; cURL dans `docs/api-tests.md` (section Phase 3) ; captures `docs/screenshots/phase-3/` (19).
@@ -179,7 +179,7 @@ Aucune dépendance Composer ajoutée. Dépendances Python : `biometrics/requirem
 ### 3.2 PHP
 - [x] `LocalBiometricsProvider` (via `VerificationMethodInterface`, sans refonte), `BiometricsClient` + transport cURL (boucle locale, sans proxy, délais), réponse hors contrat rejetée en bloc. `MockProvider` inchangé en sandbox.
 - [x] Seuils dans `.env` (acceptation 0,40, revue 0,30, liveness), validés au démarrage en production (`ConfigValidator`). Sous le seuil : échec ou revue manuelle selon le projet (`set-below-threshold`) ; file `manual_reviews` sans image, décision `bin/review.php`, webhook à la décision, expiration par cron.
-- [x] `Mrz` + `AgeCalculator` PHP (anniversaire le jour même, 29 février → 1er mars), mêmes vecteurs que Python ; document expiré refusé.
+- [x] `AgeCalculator` PHP (anniversaire le jour même, 29 février → 1er mars), même règle que Python vérifiée sur les vecteurs MRZ ; document expiré refusé. (Classe PHP `Mrz` supprimée par le contrôleur : code mort, voir arbitrage ci-dessous.)
 - [x] Envoi : chiffré AES-256-GCM dans le navigateur (clé par capture, AAD), défi à usage unique, délai minimal serveur, horodatages cohérents, tirages bornés (3), tailles/types bornés, jamais écrit par l'application ; `cron/purge_tmp.php` toutes les 15 min (reco R18).
 ### 3.3 Front
 - [x] `capture.js` (vanilla) : recto/verso (ou page passeport), cadre, netteté/luminosité, aperçu et reprise ; fichier en secours pour les documents seulement ; selfie en direct avec consignes et annonces ARIA ; consentement art. 9 dédié ; FR + EN ; bandeau sandbox exact (analyse réelle).
@@ -189,9 +189,9 @@ Aucune dépendance Composer ajoutée. Dépendances Python : `biometrics/requirem
 - [x] `deploy/systemd/veriage-biometrics.service` (utilisateur dédié, ProtectSystem=strict, PrivateTmp, NoNewPrivileges, sans capacités, sans réseau sortant, LimitCORE=0) ; procédure README (venv dédié, pool PHP-FPM, retour arrière).
 ### Limites connues (phase 3)
 - [ ] ⚖️ Seuils à calibrer sur données réelles (taux d'erreur, biais) ; données d'entraînement des modèles ; revue humaine sans image = revue sur scores seulement (`docs/rgpd.md`).
-- [ ] Contradiction du cahier : « chiffres de contrôle aussi en PHP » vs réponse sans date de naissance. Choix : la MRZ ne sort jamais du service ; la classe PHP `Mrz` n'est exercée que par les tests de parité (AgeCalculator resservira en phase 4). À arbitrer.
+- [x] ~~Contradiction du cahier : « chiffres de contrôle aussi en PHP » vs réponse sans date de naissance.~~ Arbitré par l'orchestrateur : la MRZ ne sort jamais du microservice (minimisation). Le contrôleur a supprimé la classe PHP `Mrz` (jamais appelée hors de ses tests) ; `AgeCalculator` reste (eID, phase 4), sa règle est testée sur les vecteurs partagés.
 - [ ] Liveness basique : ne résiste pas à une caméra virtuelle pilotée (l'E2E le démontre), pas de certification ISO 30107-3 ; moiré calibré sur images synthétiques seulement.
-- [ ] Analyse synchrone (≈ 3 s) dans la requête PHP ; file + worker si charge (phase 10). Nonces anti-rejeu en mémoire : un seul processus Uvicorn.
+- [ ] Analyse synchrone (≈ 2,5 s mesurées) dans la requête PHP ; file + worker si charge (phase 10). Nonces anti-rejeu en mémoire : un seul processus Uvicorn. (Contrôleur : attente bornée à 10 s d'une place libre, budget OCR de 20 s, panne technique = session laissée ouverte ; voir `tasks/reviews/phase-3-controle.md`.)
 - [ ] Piste « estimation de l'âge par le visage » : non traitée (aucun modèle à licence commerciale validé).
 
 ## Phase 4 : eID belge (lecteur de carte + PIN)

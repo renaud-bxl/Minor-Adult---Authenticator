@@ -176,6 +176,7 @@ return [
     'capture.error.capture_too_large' => 'Les photos sont trop volumineuses. Reprenez-les.',
     'capture.error.capture_attempts_exceeded' => 'Nombre maximal d’essais atteint pour cette vérification.',
     'capture.error.capture_not_allowed' => 'Cette étape n’est plus disponible. Revenez à la vérification.',
+    'capture.error.biometrics_unavailable' => 'Le service de vérification est momentanément indisponible. Vos images n’ont pas été conservées. Réessayez dans quelques instants.',
 
     'review.title' => 'Vérification en cours d’examen',
     'review.text' => 'Votre vérification doit être confirmée par un membre de notre équipe. {project} sera informé du résultat, en général dans les {hours} heures. Vous pouvez fermer cette page.',
@@ -185,7 +186,6 @@ return [
     'result.reason.liveness_failed' => 'La vérification du visage n’a pas abouti. Suivez les consignes face à la caméra, dans un endroit bien éclairé.',
     'result.reason.face_mismatch' => 'Le visage ne correspond pas à la photo du document.',
     'result.reason.face_not_found' => 'Aucun visage n’a été détecté sur la photo du document.',
-    'result.reason.biometrics_unavailable' => 'Le service de vérification est momentanément indisponible. Réessayez dans quelques minutes.',
     'result.reason.capture_rejected' => 'Les images envoyées n’ont pas pu être analysées.',
     'result.reason.capture_attempts_exceeded' => 'Nombre maximal d’essais atteint.',
     'result.reason.manual_review_rejected' => 'Après examen, votre vérification n’a pas pu être confirmée.',

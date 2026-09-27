@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import re
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -27,6 +28,7 @@ DOC_MAX_SIDE = 4096
 FRAME_MAX_BYTES = 512 * 1024
 FRAME_MAX_SIDE = 1920
 MAX_CHALLENGES = 4
+MRZ_BUDGET_S = 20.0
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TOP_LEVEL = {"reference_date", "document", "selfie", "liveness"}
 
@@ -94,10 +96,12 @@ def analyze(payload: object, services: Services, today: dt.date | None = None) -
     reasons: list[str] = []
 
     # 1. MRZ : au verso (carte d'identité) ; sinon au recto (page du passeport, ou faces inversées).
+    # Budget global de l'OCR (les deux faces), bien en deçà du délai de PHP (BIOMETRICS_TIMEOUT).
+    deadline = time.monotonic() + MRZ_BUDGET_S
     try:
-        reading = services.mrz.read(back if back is not None else front, reference)
+        reading = services.mrz.read(back if back is not None else front, reference, deadline)
         if reading.data is None and back is not None:
-            second = services.mrz.read(front, reference)
+            second = services.mrz.read(front, reference, deadline)
             reading = second if second.data is not None else reading
     except TesseractError:
         LOG.error("tesseract indisponible")

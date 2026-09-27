@@ -19,7 +19,6 @@ $reasonKeys = [
     'liveness_failed' => 'module.result.reason.liveness_failed',
     'face_mismatch' => 'module.result.reason.face_mismatch',
     'face_not_found' => 'module.result.reason.face_not_found',
-    'biometrics_unavailable' => 'module.result.reason.biometrics_unavailable',
     'capture_rejected' => 'module.result.reason.capture_rejected',
     'capture_attempts_exceeded' => 'module.result.reason.capture_attempts_exceeded',
     'manual_review_rejected' => 'module.result.reason.manual_review_rejected',

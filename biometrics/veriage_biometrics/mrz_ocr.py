@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -56,13 +57,13 @@ class MrzReader:
                           "-c", "tessedit_char_whitelist=" + WHITELIST,
                           "-c", "load_system_dawg=0", "-c", "load_freq_dawg=0"]
 
-    def ocr(self, image: np.ndarray, psm: int = 6) -> str:
+    def ocr(self, image: np.ndarray, psm: int = 6, timeout: float | None = None) -> str:
         ok, encoded = cv2.imencode(".bmp", image)
         if not ok:
             raise TesseractError("encodage impossible")
         try:
             result = subprocess.run(self.command(psm), input=encoded.tobytes(), capture_output=True,
-                                    timeout=self.timeout, check=False)
+                                    timeout=self.timeout if timeout is None else min(self.timeout, timeout), check=False)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise TesseractError(type(exc).__name__) from None
         if result.returncode != 0:
@@ -78,17 +79,25 @@ class MrzReader:
 
     # -- Lecture ------------------------------------------------------------------------------
 
-    def read(self, image: np.ndarray, today: dt.date) -> MrzReading:
-        """Meilleure lecture : la première MRZ entièrement valide ; à défaut, la raison la plus précise."""
+    def read(self, image: np.ndarray, today: dt.date, deadline: float | None = None) -> MrzReading:
+        """Meilleure lecture : la première MRZ entièrement valide ; à défaut, la raison la plus précise.
+        « deadline » (time.monotonic()) borne la durée totale : sans elle, une image hostile pourrait
+        occuper le service bien au-delà du délai de PHP (24 appels × 15 s)."""
         reason = "mrz_not_found"
         calls = 0
         for oriented in (image, cv2.rotate(image, cv2.ROTATE_180)):
             for roi in [*locate_bands(oriented), bottom_strip(oriented)]:
                 for variant in preprocess(roi):
-                    if calls >= self.max_ocr_calls:
+                    remaining = None if deadline is None else deadline - time.monotonic()
+                    if calls >= self.max_ocr_calls or (remaining is not None and remaining <= 0.5):
                         return MrzReading(None, reason)
                     calls += 1
-                    text = self.ocr(variant)
+                    try:
+                        text = self.ocr(variant, timeout=remaining)
+                    except TesseractError:
+                        if remaining is not None and deadline - time.monotonic() <= 0.5:
+                            return MrzReading(None, reason)  # délai global épuisé pendant l'appel
+                        raise
                     for lines in mrz.candidate_lines(text):
                         try:
                             data = mrz.parse(lines, today)

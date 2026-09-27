@@ -12,6 +12,9 @@ namespace App\Core;
  */
 final class ConfigValidator
 {
+    /** Seuil « même personne » publié par OpenCV pour SFace (similarité cosinus). */
+    private const SFACE_SAME_PERSON = 0.363;
+
     /**
      * @param bool $web requête HTTP (et non script CLI) : la libération anticipée du client via
      *                  fastcgi_finish_request() est alors exigée (anti-énumération par le temps)
@@ -117,8 +120,11 @@ final class ConfigValidator
         }
         $match = (float) $config->get('biometrics.face_match_threshold');
         $review = (float) $config->get('biometrics.face_review_threshold');
-        if ($match <= 0 || $match > 1 || $review <= 0 || $review > $match) {
-            $problems[] = 'BIOMETRICS_FACE_MATCH_THRESHOLD et BIOMETRICS_FACE_REVIEW_THRESHOLD : 0 < revue ≤ acceptation ≤ 1';
+        // Plancher d'acceptation : 0,363 est le seuil « même personne » publié par OpenCV pour SFace ; en
+        // dessous, on accepterait automatiquement des paires que le modèle juge de deux personnes (la
+        // fraude visée : la pièce d'un aîné). Une calibration plus basse relève de la revue, pas de l'acceptation.
+        if ($match < self::SFACE_SAME_PERSON || $match > 1 || $review <= 0 || $review > $match) {
+            $problems[] = 'BIOMETRICS_FACE_MATCH_THRESHOLD et BIOMETRICS_FACE_REVIEW_THRESHOLD : 0 < revue ≤ acceptation ≤ 1, acceptation ≥ 0,363 (SFace)';
         }
         if (!in_array($config->get('biometrics.below_threshold_default'), ['fail', 'review'], true)) {
             $problems[] = 'BIOMETRICS_BELOW_THRESHOLD doit valoir fail ou review';

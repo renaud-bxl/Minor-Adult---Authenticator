@@ -48,6 +48,9 @@ AmbientCapabilities=
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources @mount @reboot @swap @debug @obsolete @raw-io
+# Appel refusé → erreur EPERM plutôt que SIGSYS : une bibliothèque (OpenMP, XNNPACK) qui tenterait p. ex.
+# sched_setaffinity (@resources) continue sans cette optimisation au lieu de tuer le service en pleine analyse.
+SystemCallErrorNumber=EPERM
 # Réseau : écoute locale uniquement ; aucune connexion vers l'extérieur (pas de sortie Internet).
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 IPAddressDeny=any

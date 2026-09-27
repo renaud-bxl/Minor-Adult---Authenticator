@@ -11,6 +11,7 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Models\Project;
 use App\Models\VerificationSession;
+use App\Verification\Biometrics\BiometricsException;
 use App\Verification\Biometrics\CaptureCipher;
 use App\Verification\Biometrics\CapturePayload;
 use App\Verification\Methods\LocalBiometricsProvider;
@@ -154,7 +155,12 @@ final class DocumentCaptureController extends Controller
         if ($capture->spanMs() > $elapsed + 2000) {
             return $this->error($request, $session, 'capture_invalid', 422);
         }
-        $service->runCapture($project, $session, self::METHOD, $capture, $record['steps'], $request->ip());
+        try {
+            $service->runCapture($project, $session, self::METHOD, $capture, $record['steps'], $request->ip());
+        } catch (BiometricsException) {
+            // Panne technique (journalisée par le fournisseur) : la session reste ouverte, on peut recommencer.
+            return $this->error($request, $session, 'biometrics_unavailable', 503);
+        }
 
         return Response::json(['redirect' => $this->sessionUrl($request, $session)]);
     }

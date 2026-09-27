@@ -253,10 +253,12 @@ Motifs d'échec, dans `failure_reason` :
 | `face_mismatch` | Le visage ne correspond pas à la photo du document. |
 | `capture_rejected` | Images refusées par l'analyse. |
 | `capture_attempts_exceeded` | Trop de tirages de défis pour la session. |
-| `biometrics_unavailable` | Échec technique du service d'analyse (jamais réutilisé). |
 | `manual_review_rejected` | Revue manuelle défavorable. |
 
-D'autres motifs arriveront avec les méthodes réelles (phases 3 et 4).
+Une panne du service d'analyse (arrêté, saturé, délai dépassé) n'est **pas** un échec : aucune décision,
+aucun webhook ; la session reste ouverte et la personne recommence (dans la limite des tirages de défis).
+
+D'autres motifs arriveront avec l'eID (phase 4).
 
 ### 9. Widget
 

@@ -46,6 +46,7 @@ $labels = [
     'capture_too_large' => __('module.capture.error.capture_too_large'),
     'capture_attempts_exceeded' => __('module.capture.error.capture_attempts_exceeded'),
     'capture_not_allowed' => __('module.capture.error.capture_not_allowed'),
+    'biometrics_unavailable' => __('module.capture.error.biometrics_unavailable'),
 ];
 $json = static fn (array $data): string => json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 $sessionHref = $actionBase . $query;

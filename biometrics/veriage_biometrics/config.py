@@ -5,7 +5,8 @@ BIOMETRICS_HOST       adresse d'écoute : boucle locale UNIQUEMENT (127.0.0.1 ou
 BIOMETRICS_PORT       port d'écoute (défaut 8765)
 BIOMETRICS_MODEL_DIR  dossier des modèles (défaut : biometrics/models, rempli par scripts/fetch_models.sh)
 BIOMETRICS_MAX_BODY   taille maximale d'une requête en octets (défaut 16 Mio)
-BIOMETRICS_CONCURRENCY analyses simultanées (défaut 2 ; au-delà : 503, PHP réessaie ou échoue proprement)
+BIOMETRICS_CONCURRENCY analyses simultanées (défaut 2 ; au-delà : attente de 10 s au plus, puis 503 ;
+                       PHP laisse alors la session ouverte et la page propose de recommencer)
 """
 from __future__ import annotations
 
@@ -30,6 +31,8 @@ class Settings:
     model_dir: Path = PACKAGE_ROOT / "models"
     max_body_bytes: int = 16 * 1024 * 1024
     concurrency: int = 2
+    # Attente maximale d'une place libre (pic de charge) avant de répondre 503 « busy » (secondes).
+    queue_wait: float = 10.0
     # Fenêtre d'horodatage des requêtes signées (anti-rejeu, secondes).
     signature_tolerance: int = 30
 

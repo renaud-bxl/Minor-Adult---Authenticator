@@ -25,8 +25,10 @@ use App\Verification\VerificationOutcome;
  * 4. correspondance du visage ≥ seuil d'acceptation → résultat (âge ≥ âge minimal de la session) ;
  * 5. entre le seuil de revue et le seuil d'acceptation → revue manuelle si le projet l'a choisie ;
  * 6. sinon → échec « face_mismatch ».
- * Service indisponible → échec technique « biometrics_unavailable » (jamais réutilisé ni facturé comme
- * un résultat ; l'utilisateur peut recommencer depuis le site).
+ * Panne technique (service arrêté, occupé, délai dépassé, réponse non signée ou hors contrat) : AUCUNE
+ * décision. BiometricsException est relancée, la session reste ouverte (ni échec, ni webhook, ni blocage
+ * de l'adresse) et la page propose de recommencer, dans la limite des tirages de défis de la session.
+ * Demande refusée par le service (422, capture inexploitable) → échec « capture_rejected ».
  */
 final class LocalBiometricsProvider implements VerificationMethodInterface
 {
@@ -65,6 +67,8 @@ final class LocalBiometricsProvider implements VerificationMethodInterface
 
     /**
      * @param array{capture?: CapturePayload, challenge?: list<string>, review_allowed?: bool} $input
+     *
+     * @throws BiometricsException panne technique du microservice (aucune décision)
      */
     public function verify(VerificationSession $session, array $input): VerificationOutcome
     {
@@ -79,11 +83,12 @@ final class LocalBiometricsProvider implements VerificationMethodInterface
         } catch (BiometricsException $e) {
             // Code stable seulement : jamais d'image, de réponse ni de corps dans le journal.
             $this->logger?->warning('biometrics_call_failed', ['reason' => $e->reason, 'detail' => $e->detail]);
+            if ($e->reason === BiometricsException::REJECTED) {
+                return VerificationOutcome::failed('capture_rejected');
+            }
 
-            return VerificationOutcome::failed(match ($e->reason) {
-                BiometricsException::REJECTED => 'capture_rejected',
-                default => 'biometrics_unavailable',
-            });
+            // Panne technique : rien n'est décidé, la session reste ouverte (voir l'en-tête).
+            throw $e;
         }
 
         return $this->decide($result, $session->minAge, (bool) ($input['review_allowed'] ?? false));

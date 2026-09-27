@@ -9,9 +9,9 @@ l'entrée). Documentation interactive (/docs, /openapi.json) désactivée.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-import threading
 import time
 
 from fastapi import FastAPI, Request
@@ -30,6 +30,21 @@ class BodyTooLarge(Exception):
     pass
 
 
+class NoTraceback(logging.Filter):
+    """Filtre des journaux (Uvicorn, asyncio, service) : une pile d'exception et son message peuvent
+    recopier une donnée reçue (texte lu par l'OCR, valeur mal formée). On ne garde que le type."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.exc_info:
+            exc_type = record.exc_info[0]
+            record.msg = "%s (%s)" % (str(record.msg).strip(), exc_type.__name__ if exc_type else "?")
+            record.args = None
+            record.exc_info = None
+            record.exc_text = None
+            record.stack_info = None
+        return True
+
+
 async def read_body(request: Request, limit: int) -> bytes:
     declared = request.headers.get("content-length")
     if declared is not None and (not declared.isdigit() or int(declared) > limit):
@@ -46,7 +61,8 @@ async def read_body(request: Request, limit: int) -> bytes:
 def create_app(settings: Settings, services: analysis.Services, verifier: RequestVerifier | None = None) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     verifier = verifier or RequestVerifier(settings.secret, settings.signature_tolerance)
-    slots = threading.BoundedSemaphore(settings.concurrency)
+    # Analyses simultanées bornées ; au-delà, courte attente (pic de charge), puis 503 « busy ».
+    slots = asyncio.Semaphore(settings.concurrency)
 
     def respond(status: int, payload: dict, nonce: str = "") -> Response:
         body = json.dumps(payload, separators=(",", ":")).encode()
@@ -96,13 +112,21 @@ def create_app(settings: Settings, services: analysis.Services, verifier: Reques
         except (ValueError, UnicodeDecodeError):
             return respond(400, {"error": "invalid_json"}, nonce)
         del body
-        if not slots.acquire(blocking=False):
+        try:
+            await asyncio.wait_for(slots.acquire(), timeout=settings.queue_wait)
+        except asyncio.TimeoutError:
             return respond(503, {"error": "busy"}, nonce)
         started = time.monotonic()
         try:
             result = await run_in_threadpool(analysis.analyze, payload, services)
         except analysis.RequestError as exc:
             return respond(422, {"error": exc.code}, nonce)
+        except Exception as exc:  # noqa: BLE001
+            # Rattrapée ICI et non par le gestionnaire global : Starlette relancerait l'exception et
+            # Uvicorn journaliserait la pile complète, dont le message peut recopier une valeur lue.
+            # Réponse signée avec le nonce : PHP la classe en panne technique, pas en réponse forgée.
+            LOG.error("erreur interne pendant l'analyse : %s", type(exc).__name__)
+            return respond(500, {"error": "internal_error"}, nonce)
         finally:
             slots.release()
             del payload

@@ -210,19 +210,54 @@ final class DocumentCaptureTest extends ModuleTestCase
         }
     }
 
-    public function testServiceOutageOrForgedResponseFailsTechnically(): void
+    /**
+     * Panne technique (service arrêté, occupé, réponse forgée ou hors contrat) : aucune décision. La
+     * session reste ouverte (ni échec, ni webhook, ni blocage de l'adresse) et l'on peut recommencer.
+     */
+    public function testServiceOutageOrForgedResponseLeavesTheSessionOpen(): void
+    {
+        $p = $this->createProject(webhooks: ['test' => 'https://shop.example/hooks']);
+        $key = $p['keys']['test'];
+        $id = $this->sessionReady($key, 'down@example.be');
+        $capturePage = $this->consentBiometrics($id);
+        $faults = [
+            'down' => fn () => $this->service->down = true,
+            'forged' => fn () => $this->service->responseSecret = 'attacker-secret-0123456789abcdef-012345678',
+            'leak' => fn () => $this->service->response = [...FakeBiometricsService::result(), 'name' => 'SPECIMEN'],
+        ];
+        foreach ($faults as $name => $fault) {
+            $this->service->down = false;
+            $this->service->responseSecret = null;
+            $this->service->response = FakeBiometricsService::result();
+            $fault();
+            $capture = $this->start($id, $capturePage);
+            usleep(40_000);
+            $response = $this->submit($id, $capture, self::encrypt($capture, self::payload(count($capture['challenge']))));
+            self::assertSame(503, $response->status(), $name);
+            self::assertSame('biometrics_unavailable', self::body($response)['error'], $name);
+            $status = self::body($this->api($key, 'GET', '/api/v1/verifications?email=down@example.be'));
+            self::assertSame('pending', $status['status'], $name . ' : session laissée ouverte');
+        }
+        self::assertSame(0, (int) $this->value('SELECT COUNT(*) FROM webhook_deliveries'), 'aucun webhook pour une panne');
+        self::assertStringNotContainsString('SPECIMEN', implode("\n", TestApplication::logLines()));
+        self::assertStringContainsString('biometrics_call_failed', implode("\n", TestApplication::logLines()));
+    }
+
+    public function testCaptureSucceedsAfterATransientOutage(): void
     {
         $p = $this->createProject();
+        $id = $this->sessionReady($p['keys']['test'], 'retry@example.be');
+        $capturePage = $this->consentBiometrics($id);
         $this->service->down = true;
-        self::assertStringContainsString('data-failure-reason="biometrics_unavailable"', $this->fullCapture($this->sessionReady($p['keys']['test'], 'down@example.be'))->body());
+        $capture = $this->start($id, $capturePage);
+        usleep(40_000);
+        self::assertSame(503, $this->submit($id, $capture, self::encrypt($capture, self::payload(count($capture['challenge']))))->status());
         $this->service->down = false;
-        $this->service->responseSecret = 'attacker-secret-0123456789abcdef-012345678';
-        self::assertStringContainsString('data-failure-reason="biometrics_unavailable"', $this->fullCapture($this->sessionReady($p['keys']['test'], 'forged@example.be'))->body());
-        $this->service->responseSecret = null;
-        $this->service->response = [...FakeBiometricsService::result(), 'name' => 'SPECIMEN'];
-        $page = $this->fullCapture($this->sessionReady($p['keys']['test'], 'leak@example.be'));
-        self::assertStringContainsString('data-failure-reason="biometrics_unavailable"', $page->body(), 'réponse hors contrat refusée');
-        self::assertStringNotContainsString('SPECIMEN', implode("\n", TestApplication::logLines()));
+        $capture = $this->start($id, $capturePage);
+        usleep(40_000);
+        $response = $this->submit($id, $capture, self::encrypt($capture, self::payload(count($capture['challenge']))));
+        self::assertSame(200, $response->status(), $response->body());
+        self::assertStringContainsString('data-result-status="verified"', $this->client->get((string) self::body($response)['redirect'])->body());
     }
 
     public function testBelowThresholdGoesToManualReviewWhenTheProjectChoosesIt(): void

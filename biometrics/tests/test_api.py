@@ -152,3 +152,73 @@ def test_expired_document_and_passport_without_back(client, payload, assets):
 def test_response_body_hash_matches_signature_base():
     body = b'{"a":1}'
     assert hashlib.sha256(body).hexdigest() in response_base("n" * 16, 200, body).decode()
+
+
+# -- Contrôle : pannes internes, charge, journaux ---------------------------------------------------
+
+FAKE_RESULT = {"age": 30, "doc_expired": False, "face_match_score": 0.9, "liveness_passed": True, "mrz_valid": True, "reasons": []}
+
+
+def test_internal_error_is_signed_with_the_nonce_and_never_echoes_data(services, monkeypatch, caplog):
+    """Une exception imprévue : réponse 500 signée avec le nonce (PHP y voit une panne, pas une réponse
+    forgée), aucune pile ni message d'exception dans les journaux (ils peuvent recopier une valeur lue)."""
+    from veriage_biometrics import analysis
+
+    def boom(payload, svc):
+        raise ValueError("SPECIMEN<<ANNA<<<<740812")
+
+    monkeypatch.setattr(analysis, "analyze", boom)
+    caplog.set_level(logging.DEBUG)
+    with TestClient(create_app(Settings(secret=SECRET.encode()), services), raise_server_exceptions=True) as c:
+        response, headers = post(c, {"x": 1})
+    assert response.status_code == 500 and response.json() == {"error": "internal_error"}
+    check_response_signature(response, headers["X-VeriAge-Nonce"])
+    assert "SPECIMEN" not in caplog.text and "740812" not in caplog.text and "Traceback" not in caplog.text
+    assert "ValueError" in caplog.text
+
+
+def test_busy_service_waits_briefly_then_answers_503(services, monkeypatch):
+    import threading
+
+    from veriage_biometrics import analysis
+
+    release = threading.Event()
+
+    def slow(payload, svc):
+        release.wait(5)
+        return FAKE_RESULT
+
+    monkeypatch.setattr(analysis, "analyze", slow)
+    settings = Settings(secret=SECRET.encode(), concurrency=1, queue_wait=0.2)
+    with TestClient(create_app(settings, services)) as c:
+        first = {}
+        worker = threading.Thread(target=lambda: first.update(response=post(c, {"x": 1})[0]))
+        worker.start()
+        time.sleep(0.3)  # la première analyse occupe la seule place
+        response, headers = post(c, {"x": 2})
+        assert response.status_code == 503 and response.json() == {"error": "busy"}
+        check_response_signature(response, headers["X-VeriAge-Nonce"])
+        release.set()
+        worker.join(5)
+    assert first["response"].status_code == 200
+
+
+def test_log_filter_drops_tracebacks_and_exception_messages():
+    from veriage_biometrics.api import NoTraceback
+
+    try:
+        raise ValueError("P<UTOERIKSSON<<ANNA")
+    except ValueError:
+        import sys
+        record = logging.LogRecord("uvicorn.error", logging.ERROR, __file__, 1, "Exception in ASGI application\n", None, sys.exc_info())
+    assert NoTraceback().filter(record) is True
+    text = logging.Formatter("%(message)s").format(record)
+    assert text == "Exception in ASGI application (ValueError)" and "ERIKSSON" not in text
+
+
+def test_mrz_reading_stops_at_the_deadline(mrz_reader):
+    import numpy as np
+    started = time.monotonic()
+    reading = mrz_reader.read(np.full((600, 900, 3), 255, np.uint8), dt.date.today(), deadline=time.monotonic())
+    assert reading.data is None and reading.reason == "mrz_not_found"
+    assert time.monotonic() - started < 1.0  # aucun appel à Tesseract

@@ -173,6 +173,7 @@ return [
     'capture.error.capture_too_large' => 'The photos are too large. Please take them again.',
     'capture.error.capture_attempts_exceeded' => 'Maximum number of attempts reached for this verification.',
     'capture.error.capture_not_allowed' => 'This step is no longer available. Go back to the verification.',
+    'capture.error.biometrics_unavailable' => 'The verification service is temporarily unavailable. Your images were not kept. Please try again in a moment.',
 
     'review.title' => 'Verification under review',
     'review.text' => 'Your verification must be confirmed by a member of our team. {project} will be informed of the result, usually within {hours} hours. You can close this page.',
@@ -182,7 +183,6 @@ return [
     'result.reason.liveness_failed' => 'The face check did not succeed. Follow the instructions facing the camera, in a well-lit place.',
     'result.reason.face_mismatch' => 'The face does not match the photo on the document.',
     'result.reason.face_not_found' => 'No face was found on the document photo.',
-    'result.reason.biometrics_unavailable' => 'The verification service is temporarily unavailable. Please try again in a few minutes.',
     'result.reason.capture_rejected' => 'The images sent could not be analysed.',
     'result.reason.capture_attempts_exceeded' => 'Maximum number of attempts reached.',
     'result.reason.manual_review_rejected' => 'After review, your verification could not be confirmed.',

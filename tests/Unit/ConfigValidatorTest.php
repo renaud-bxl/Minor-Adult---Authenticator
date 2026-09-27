@@ -112,6 +112,22 @@ final class ConfigValidatorTest extends TestCase
         ]), false));
     }
 
+    public function testBiometricsSettingsAreChecked(): void
+    {
+        $shipped = require dirname(__DIR__, 2) . '/config/biometrics.php';
+        $valid = [...$shipped, 'enabled' => true, 'secret' => str_repeat('s', 64)];
+        self::assertSame([], ConfigValidator::biometricsProblems($this->config(['biometrics' => $valid])), 'valeurs livrées valides');
+        self::assertSame([], ConfigValidator::biometricsProblems($this->config(['biometrics' => [...$valid, 'enabled' => false, 'secret' => '']])), 'désactivée : rien à contrôler');
+        $problems = ConfigValidator::biometricsProblems($this->config(['biometrics' => [...$valid,
+            'secret' => 'court', 'url' => 'http://10.0.0.5:8765', 'face_match_threshold' => 0.30, 'face_review_threshold' => 0.20,
+            'below_threshold_default' => 'accept', 'timeout' => 300, 'tmp_dir' => 'public/tmp',
+            'liveness' => [...$shipped['liveness'], 'yaw_threshold' => 0.05],
+        ]]));
+        self::assertCount(7, $problems);
+        self::assertStringContainsString('acceptation ≥ 0,363', implode("\n", $problems), 'plancher SFace');
+        self::assertStringNotContainsString('court', implode("\n", $problems), 'aucun secret dans les messages');
+    }
+
     public function testWebRequestsRequirePhpFpm(): void
     {
         $problems = ConfigValidator::productionProblems($this->config(), true);

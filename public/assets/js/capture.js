@@ -414,7 +414,7 @@
 
     function failure(result) {
         var code = (result && result.data && result.data.error) || 'error_generic';
-        var retryable = ['capture_expired', 'capture_too_fast', 'capture_invalid', 'capture_frames_invalid', 'error_network'].indexOf(code) !== -1;
+        var retryable = ['capture_expired', 'capture_too_fast', 'capture_invalid', 'capture_frames_invalid', 'error_network', 'biometrics_unavailable'].indexOf(code) !== -1;
         var restartDocument = ['capture_image_invalid', 'capture_too_large'].indexOf(code) !== -1;
         var attemptsLeft = typeof state.attemptsLeft === 'number' ? state.attemptsLeft : undefined;
         if ((retryable || restartDocument) && attemptsLeft === 0) {

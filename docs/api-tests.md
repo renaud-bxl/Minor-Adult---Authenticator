@@ -621,10 +621,13 @@ exit 1   (dossier cible vide : rien n'est installé)
 
 ### 6. Tests
 
-- `biometrics/.venv/bin/python -m pytest -q` → **96 passed** (MRZ ICAO + vecteurs partagés, HMAC et rejeu, images,
+- `biometrics/.venv/bin/python -m pytest -q` → **103 passed** après contrôle (MRZ ICAO : vecteurs, carte allemande, numéro long TD1 ; HMAC et rejeu, images,
   OCR sur documents synthétiques photographiés : TD1 incliné/flou/retourné, TD3, chiffre falsifié ; YuNet/SFace ;
-  liveness simulé et MediaPipe réel ; moiré ; API : contrat de réponse, journaux sans donnée ; Tesseract sans
+  liveness simulé et MediaPipe réel ; moiré ; API : contrat de réponse, journaux sans donnée ni pile
+  d'exception, erreur interne signée avec le nonce, attente bornée puis 503 ; budget OCR ; Tesseract sans
   écriture de fichier, prouvé par strace).
+- Service arrêté, saturé ou réponse forgée : `POST /s/{id}/document/submit` → `503 {"error":"biometrics_unavailable"}`,
+  session laissée `pending`, aucun webhook ; nouvelle capture possible (`DocumentCaptureTest`).
 - Installation propre depuis les verrous : `pip install --require-hashes -r requirements.txt` (+ mediapipe
   `--no-deps`, + dev) dans un venv neuf, puis les 96 tests.
 - `vendor/bin/phpunit` → voir `tasks/todo.md` (dont `BiometricsServiceTest` : PHP → Python réel sur images

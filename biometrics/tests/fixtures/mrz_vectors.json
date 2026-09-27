@@ -1,5 +1,5 @@
 {
- "_comment": "Vecteurs MRZ partagés par pytest (biometrics/tests/test_mrz.py) et PHPUnit (tests/Unit/MrzTest.php). Données fictives (Utopie, spécimens ICAO 9303).",
+ "_comment": "Vecteurs MRZ de pytest (biometrics/tests/test_mrz.py) ; PHPUnit (tests/Unit/AgeCalculatorTest.php) y vérifie la même règle d'âge. Données fictives (Utopie, spécimens ICAO 9303).",
  "vectors": [
   {
    "name": "icao_td1_specimen",
