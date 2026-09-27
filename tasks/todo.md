@@ -5,7 +5,8 @@ Légende : `[ ]` à faire · `[~]` en cours · `[x]` terminé (avec preuve) · `
 ## État actuel
 - [x] Section 0 : lessons.md, todo.md, CLAUDE.md créés. Questions bloquantes posées et tranchées (voir CLAUDE.md).
 - [x] Plan de la phase 1 validé (protocole multi-agents, 2026-09-27).
-- [~] **Phase 1 implémentée par le créateur, contrôlée** (`tasks/reviews/phase-1-controle.md`) : en attente de l'audit critique.
+- [x] **Phase 1 APPROUVÉE par le critique** (168 tests verts ; `tasks/reviews/phase-1-*.md`).
+- [~] Phase 2 en cours (mode automatique, 3 agents ; fiches de rôle dans `tasks/agents/`).
 
 ---
 
