@@ -13,6 +13,7 @@ import sys
 import uvicorn
 
 from .analysis import Services
+from .document import VizReader
 from .api import NoTraceback, create_app
 from .config import ConfigError, Settings
 from .faces import FaceEngine
@@ -32,7 +33,7 @@ def build_services(settings: Settings) -> Services:
             raise ConfigError(f"MediaPipe indisponible ({type(exc).__name__}) ; voir README") from None
         logging.getLogger("veriage.biometrics").warning("MediaPipe indisponible : repli YuNet (défi « cligner » impossible)")
         landmarker = None
-    return Services(faces=faces, mrz=reader, landmarker=landmarker)
+    return Services(faces=faces, mrz=reader, landmarker=landmarker, viz=VizReader(settings.tessdata_dir))
 
 
 def main() -> int:

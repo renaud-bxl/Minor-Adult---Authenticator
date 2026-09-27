@@ -324,6 +324,7 @@ def selfie_sequence(base: np.ndarray, challenge: list[str], landmarks: np.ndarra
     for _ in range(neutral_frames):
         add(base, 0)
     closed = close_eyes(base, landmarks)
+    mouth = open_mouth(base, landmarks)
     count = max(4, step_ms // interval_ms)
     for step, action in enumerate(challenge, start=1):
         for i in range(count):
@@ -334,6 +335,8 @@ def selfie_sequence(base: np.ndarray, challenge: list[str], landmarks: np.ndarra
                 add(yaw_warp(base, box, -1.3 * phase), step)
             elif action == "blink":
                 add(closed if count // 3 <= i < count // 3 + 2 else base, step)
+            elif action == "open_mouth":
+                add(mouth if count // 3 <= i < count // 3 + 3 else base, step)
             else:
                 add(base, step)
     return frames

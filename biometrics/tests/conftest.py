@@ -52,11 +52,12 @@ def mrz_reader():
 @pytest.fixture(scope="session")
 def services(face_engine, landmarker, mrz_reader):
     from veriage_biometrics.analysis import Services
-    return Services(faces=face_engine, mrz=mrz_reader, landmarker=landmarker)
+    from veriage_biometrics.document import VizReader
+    return Services(faces=face_engine, mrz=mrz_reader, landmarker=landmarker, viz=VizReader(MODELS / "tessdata"))
 
 
 @pytest.fixture(scope="session")
 def assets() -> Path:
-    for name in ("astronaut.png", "obama.jpg", "biden.jpg"):
+    for name in ("astronaut.png", "obama.jpg", "obama2.jpg", "biden.jpg"):
         _require(ASSETS / name, "lancez biometrics/scripts/fetch_test_assets.sh")
     return ASSETS
