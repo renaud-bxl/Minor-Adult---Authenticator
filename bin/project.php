@@ -11,7 +11,8 @@ declare(strict_types=1);
  *   php bin/project.php create --account=12 --name=… --origins=…      (compte existant)
  *   php bin/project.php list
  *   php bin/project.php rotate-key    --project=prj_… --mode=test|live
- *   php bin/project.php rotate-secret --project=prj_… --mode=test|live
+ *   php bin/project.php rotate-secret --project=prj_… --mode=test|live [--grace-hours=24]
+ *       (--grace-hours : l'ancien secret signe encore les webhooks pendant ce délai ; 0 si compromis)
  *   php bin/project.php set-origins   --project=prj_… --origins=…
  *   php bin/project.php add-webhook   --project=prj_… --mode=test|live --url=…
  *   php bin/project.php demo          (projet de démonstration ; lignes .env sur la sortie standard)
@@ -113,7 +114,14 @@ try {
             break;
 
         case 'rotate-secret':
-            echo 'Nouveau secret de signature : ' . $admin->rotateSecret($project(), $mode()) . "\n";
+            $graceHours = $option('grace-hours') ?? '24';
+            if (preg_match('/^\d{1,3}$/D', $graceHours) !== 1) {
+                throw new InvalidArgumentException('--grace-hours doit être un nombre entier d\'heures (0 à 168).');
+            }
+            echo 'Nouveau secret de signature : ' . $admin->rotateSecret($project(), $mode(), (int) $graceHours * 3600) . "\n";
+            echo $graceHours === '0'
+                ? "L'ancien secret ne vaut plus.\n"
+                : "L'ancien secret signe encore les webhooks pendant {$graceHours} h (deux signatures v1) ; le jeton de retour est signé avec le nouveau.\n";
             break;
 
         case 'set-origins':

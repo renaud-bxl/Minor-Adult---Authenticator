@@ -60,6 +60,28 @@ final class ConfigValidatorTest extends TestCase
         self::assertStringNotContainsString('c2hvcnQ', implode(' ', $problems));
     }
 
+    public function testCryptoKeyringAndDemoKeyAreChecked(): void
+    {
+        $current = 'base64:' . base64_encode(str_repeat('b', 32));
+        $old = 'base64:' . base64_encode(str_repeat('c', 32));
+        self::assertSame([], ConfigValidator::productionProblems($this->config([
+            'security.crypto_key_version' => 2, 'security.crypto_previous_keys' => '1:' . $old,
+            'app.demo_enabled' => true, 'app.demo_api_key' => 'sk_test_' . str_repeat('a', 40),
+        ]), false));
+        $invalid = [
+            ['security.crypto_key_version' => 256],
+            ['security.crypto_key_version' => 2, 'security.crypto_previous_keys' => '2:' . $old],
+            ['security.crypto_previous_keys' => 'nope'],
+            ['security.crypto_key_version' => 2, 'security.crypto_previous_keys' => '1:' . $current],
+            ['app.demo_enabled' => true, 'app.demo_api_key' => 'sk_live_' . str_repeat('a', 40)],
+        ];
+        foreach ($invalid as $overrides) {
+            $problems = ConfigValidator::productionProblems($this->config($overrides), false);
+            self::assertCount(1, $problems, json_encode($overrides, JSON_THROW_ON_ERROR));
+            self::assertStringNotContainsString(substr($old, 7, 10), $problems[0], 'aucune clé dans le message');
+        }
+    }
+
     public function testWebRequestsRequirePhpFpm(): void
     {
         $problems = ConfigValidator::productionProblems($this->config(), true);

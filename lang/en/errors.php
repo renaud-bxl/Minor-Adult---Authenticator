@@ -28,5 +28,7 @@ return [
     'api.validation_failed' => 'Some fields are invalid (see “details”).',
     'api.rate_limited' => 'Too many requests. Retry after the delay given by the Retry-After header.',
     'api.email_locked' => 'Too many failed verifications for this address. Try again later.',
+    'api.idempotency_key_reused' => 'This idempotency key was already used for a different request. Use a new key.',
+    'api.idempotency_in_progress' => 'A request with this idempotency key is still in progress. Retry in a moment.',
     'api.server_error' => 'Internal error. Please try again later.',
 ];

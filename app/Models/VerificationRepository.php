@@ -27,16 +27,20 @@ final class VerificationRepository
     }
 
     /**
-     * Preuve réutilisable d'un AUTRE projet, non expirée, dans le même mode.
+     * Preuve réutilisable d'un AUTRE projet, non expirée, dans le même mode. $accountId restreint la
+     * recherche aux projets d'un même compte client (sandbox : les codes y sont affichés à l'écran, le
+     * contrôle de l'adresse n'y prouve rien ; un client ne doit pas sonder les tests d'un autre client).
      *
      * @return array<string, mixed>|null
      */
-    public function findShared(string $sharedHash, bool $livemode, int $excludeProjectId): ?array
+    public function findShared(string $sharedHash, bool $livemode, int $excludeProjectId, ?int $accountId = null): ?array
     {
         return $this->db->fetchOne(
-            "SELECT * FROM verifications WHERE shared_hash = ? AND livemode = ? AND project_id <> ? AND source = 'verification' "
-            . 'AND expires_at > UTC_TIMESTAMP() ORDER BY verified_at DESC LIMIT 1',
-            [$sharedHash, $livemode ? 1 : 0, $excludeProjectId],
+            "SELECT v.* FROM verifications v JOIN projects p ON p.id = v.project_id WHERE v.shared_hash = ? AND v.livemode = ? "
+            . "AND v.project_id <> ? AND v.source = 'verification' AND v.expires_at > UTC_TIMESTAMP() "
+            . ($accountId !== null ? 'AND p.account_id = ? ' : '')
+            . 'ORDER BY v.verified_at DESC LIMIT 1',
+            [$sharedHash, $livemode ? 1 : 0, $excludeProjectId, ...($accountId !== null ? [$accountId] : [])],
         );
     }
 

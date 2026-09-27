@@ -86,6 +86,47 @@ final class CryptoTest extends TestCase
         );
     }
 
+    public function testKeyringDecryptsOldVersionsAndEncryptsWithTheCurrentOne(): void
+    {
+        $v1 = new Crypto(str_repeat('k', 32), str_repeat('h', 32));
+        $old = $v1->encrypt('a@b.be', 'ctx');
+        self::assertSame("\x01", $old[0]);
+
+        $v2 = new Crypto(str_repeat('n', 32), str_repeat('h', 32), 2, [1 => str_repeat('k', 32)]);
+        self::assertSame('a@b.be', $v2->decrypt($old, 'ctx'), 'ancienne clé : lecture seule');
+        self::assertTrue($v2->needsReencryption($old));
+        $fresh = $v2->encrypt('a@b.be', 'ctx');
+        self::assertSame("\x02", $fresh[0]);
+        self::assertFalse($v2->needsReencryption($fresh));
+
+        // Sans l'ancienne clé dans le trousseau, l'ancien chiffré est illisible.
+        $this->expectException(\RuntimeException::class);
+        (new Crypto(str_repeat('n', 32), str_repeat('h', 32), 2))->decrypt($old, 'ctx');
+    }
+
+    public function testKeyringConfiguration(): void
+    {
+        $raw = random_bytes(32);
+        self::assertSame([3 => $raw], Crypto::parseKeyring(' 3:base64:' . base64_encode($raw) . ' , '));
+        self::assertSame([], Crypto::parseKeyring(''));
+        foreach (['x:base64:' . base64_encode($raw), '1:short', '1:base64:' . base64_encode($raw) . ',1:base64:' . base64_encode($raw)] as $invalid) {
+            try {
+                Crypto::parseKeyring($invalid);
+                self::fail('Trousseau invalide accepté : ' . $invalid);
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        foreach ([[0, []], [256, []], [2, [2 => $raw]], [2, [1 => 'short']]] as [$version, $previous]) {
+            try {
+                new Crypto(str_repeat('n', 32), str_repeat('h', 32), $version, $previous);
+                self::fail('Version ou ancienne clé invalide acceptée');
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
     public function testKeysMustBe32Bytes(): void
     {
         $this->expectException(\InvalidArgumentException::class);

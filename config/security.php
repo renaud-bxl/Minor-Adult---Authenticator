@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 return [
     'crypto_key' => (string) env('CRYPTO_KEY', ''),
+    // Rotation de CRYPTO_KEY : version de la clé courante (1 à 255, écrite dans chaque chiffré) et
+    // anciennes clés gardées pour déchiffrer (« 1:base64:…,2:base64:… ») jusqu'à bin/reencrypt.php.
+    'crypto_key_version' => (int) env('CRYPTO_KEY_VERSION', 1),
+    'crypto_previous_keys' => (string) env('CRYPTO_PREVIOUS_KEYS', ''),
     'hsts_max_age' => (int) env('HSTS_MAX_AGE', 31536000),
     // Désactivé par défaut : sur un VPS partagé (domaine de recette), includeSubDomains imposerait
     // HTTPS aux autres sites hébergés sous le même domaine.
@@ -64,6 +68,9 @@ return [
         // Page de vérification hébergée : requêtes par IP, envois de code par IP.
         'verify_page_ip' => [120, 60],
         'verify_code_send_ip' => [20, 3600],
+        // Saisies de code par IP, et codes erronés par adresse (projet + mode) toutes sessions confondues.
+        'verify_code_ip' => [60, 3600],
+        'verify_code_email' => [10, 86400],
         // Démonstration : sessions sandbox créées par IP.
         'demo_session_ip' => [60, 3600],
     ],

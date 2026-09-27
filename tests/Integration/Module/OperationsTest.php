@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Module;
 
+use App\Core\Crypto;
+use App\Models\ProjectRepository;
+use App\Services\KeyRotation;
 use App\Services\MailWorker;
 use App\Services\ProjectAdmin;
 use App\Services\Purger;
 use App\Services\QueuedMailSender;
+use App\Verification\VerificationService;
 use Tests\Support\TestApplication;
 
 /** Exploitation : file d'e-mails chiffrée + worker, administration des projets, purge RGPD. */
@@ -107,6 +111,40 @@ final class OperationsTest extends ModuleTestCase
         self::assertSame(401, $this->api($p['keys']['test'], 'GET', '/api/v1/verifications?email=a@b.be')->status());
         self::assertSame(200, $this->api($new, 'GET', '/api/v1/verifications?email=a@b.be')->status());
         self::assertSame(200, $this->api($p['keys']['live'], 'GET', '/api/v1/verifications?email=a@b.be')->status(), 'autre mode intact');
+    }
+
+    public function testCryptoKeyRotationRewritesEveryCiphertext(): void
+    {
+        $db = $this->app->db();
+        $p = $this->createProject(webhooks: ['test' => 'https://shop.example/hooks']);
+        ProjectAdmin::fromApplication($this->app)->rotateSecret($p['project'], true, 3600);
+        $this->completeFlow($this->newSession($p['keys']['test'], 'rotate@example.be')['session_id']);
+        $this->newSession($p['keys']['test'], 'pending@example.be');
+
+        $oldKey = Crypto::decodeKey((string) $this->app->config->get('security.crypto_key'));
+        $hashKey = Crypto::decodeKey((string) $this->app->config->get('app.key'));
+        $rotated = new Crypto(random_bytes(32), $hashKey, 2, [1 => $oldKey]);
+        $counts = (new KeyRotation($db, $rotated))->run();
+        self::assertSame([
+            'projects.signing_secret_test_enc' => 1, 'projects.previous_secret_test_enc' => 0,
+            'projects.signing_secret_live_enc' => 1, 'projects.previous_secret_live_enc' => 1,
+            'verifications.email_enc' => 1, 'verification_sessions.email_enc' => 2, 'webhook_deliveries.payload_enc' => 1,
+        ], $counts);
+        self::assertSame(0, array_sum((new KeyRotation($db, $rotated))->run()), 'idempotent');
+
+        // Tout est désormais lisible avec la seule nouvelle clé (ancienne retirée du trousseau).
+        $newOnly = new Crypto((new \ReflectionProperty(Crypto::class, 'encryptionKey'))->getValue($rotated), $hashKey, 2);
+        $repository = new ProjectRepository($db, $newOnly);
+        $project = $repository->findById($p['project']->id);
+        self::assertNotNull($project);
+        self::assertSame($p['secrets']['test'], $repository->signingSecrets($project, false)[0]);
+        self::assertSame($p['secrets']['live'], $repository->signingSecrets($project, true)[1], 'ancien secret en recouvrement');
+        $verification = $db->fetchOne('SELECT * FROM verifications');
+        self::assertSame('rotate@example.be', $newOnly->decrypt((string) $verification['email_enc'],
+            VerificationService::verificationEmailContext((int) $verification['project_id'], (bool) $verification['livemode'], (string) $verification['email_hash'])));
+        foreach ($db->fetchAll('SELECT email_enc, public_id FROM verification_sessions') as $row) {
+            self::assertStringEndsWith('@example.be', $newOnly->decrypt((string) $row['email_enc'], VerificationService::sessionEmailContext((string) $row['public_id'])));
+        }
     }
 
     public function testPurgeAppliesRetentionRules(): void

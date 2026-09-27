@@ -39,6 +39,49 @@ final class SessionApiTest extends ModuleTestCase
         self::assertSame('user_4521', $row['external_ref']);
     }
 
+    public function testIdempotencyKeyReplaysTheSameSession(): void
+    {
+        $p = $this->createProject();
+        $other = $this->createProject(name: 'Other');
+        $send = fn (string $key, array $body, string $idempotencyKey) => HttpClient::verify()->json('POST', '/api/v1/sessions', $body,
+            ['Authorization' => 'Bearer ' . $key, 'Idempotency-Key' => $idempotencyKey]);
+        $body = ['email' => 'retry@example.be', 'min_age' => 18];
+
+        $first = $send($p['keys']['test'], $body, 'order-42');
+        self::assertSame(201, $first->status());
+        self::assertNull($first->header('Idempotent-Replayed'));
+        $again = $send($p['keys']['test'], ['min_age' => 18, 'email' => 'retry@example.be'], 'order-42');
+        self::assertSame(201, $again->status());
+        self::assertSame('true', $again->header('Idempotent-Replayed'));
+        self::assertSame(self::body($first), self::body($again), 'même réponse, même session');
+        self::assertSame(1, (int) $this->app->db()->fetchOne('SELECT COUNT(*) AS n FROM verification_sessions')['n']);
+
+        // Même clé, autre requête : refus explicite. Clés cloisonnées par projet et par mode.
+        $reused = $send($p['keys']['test'], ['email' => 'someone.else@example.be'], 'order-42');
+        self::assertSame([422, 'idempotency_key_reused'], [$reused->status(), self::body($reused)['error']['code']]);
+        self::assertSame(201, $send($p['keys']['live'], $body, 'order-42')->status());
+        self::assertSame(201, $send($other['keys']['test'], $body, 'order-42')->status());
+
+        // Une erreur n'est pas mémorisée : la même clé peut être réessayée après correction.
+        self::assertSame(422, $send($p['keys']['test'], ['email' => 'nope'], 'order-43')->status());
+        self::assertSame(201, $send($p['keys']['test'], ['email' => 'fixed@example.be'], 'order-43')->status());
+
+        // Requête d'origine encore en cours ; clé invalide.
+        $this->app->redis()->set('idempotency:sessions:' . $p['project']->id . ':test:' . $this->app->crypto()->fingerprint('order-44'),
+            json_encode(['request' => $this->app->crypto()->fingerprint(json_encode(['email' => 'x@example.be']))]));
+        $busy = $send($p['keys']['test'], ['email' => 'x@example.be'], 'order-44');
+        self::assertSame([409, '1'], [$busy->status(), $busy->header('Retry-After')]);
+        $invalid = $send($p['keys']['test'], $body, str_repeat('é', 3));
+        self::assertSame(['Idempotency-Key' => 'invalid'], self::body($invalid)['error']['details']);
+
+        // Session effacée (droit à l'effacement) : aucune réponse rejouée avec des données effacées.
+        $this->api($p['keys']['test'], 'DELETE', '/api/v1/verifications?email=retry@example.be');
+        $afterErase = $send($p['keys']['test'], $body, 'order-42');
+        self::assertSame(201, $afterErase->status());
+        self::assertNull($afterErase->header('Idempotent-Replayed'));
+        self::assertNotSame(self::body($first)['session_id'], self::body($afterErase)['session_id']);
+    }
+
     public function testValidationErrorsAreNormalized(): void
     {
         $p = $this->createProject();

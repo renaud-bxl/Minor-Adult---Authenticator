@@ -48,6 +48,11 @@ final class ConfigValidator
         if ((string) $config->get('app.key') !== '' && $config->get('app.key') === $config->get('security.crypto_key')) {
             $problems[] = 'APP_KEY et CRYPTO_KEY doivent être différentes';
         }
+        $problems = [...$problems, ...self::keyringProblems($config)];
+        $demoKey = (string) $config->get('app.demo_api_key');
+        if ($config->get('app.demo_enabled') === true && $demoKey !== '' && !str_starts_with($demoKey, 'sk_test_')) {
+            $problems[] = 'DEMO_API_KEY doit être une clé sandbox (sk_test_…) : la démonstration ne crée jamais de session de production';
+        }
         if ($config->get('mail.driver') !== 'smtp') {
             $problems[] = 'MAIL_DRIVER doit valoir smtp';
         }
@@ -65,5 +70,28 @@ final class ConfigValidator
         }
 
         return $problems;
+    }
+
+    /**
+     * Trousseau de chiffrement (rotation de CRYPTO_KEY) : version courante 1 à 255, anciennes clés au
+     * format « version:base64:… », versions distinctes, clé courante absente des anciennes.
+     *
+     * @return list<string>
+     */
+    private static function keyringProblems(Config $config): array
+    {
+        try {
+            $current = Crypto::decodeKey((string) $config->get('security.crypto_key'));
+        } catch (\InvalidArgumentException) {
+            return []; // déjà signalé (CRYPTO_KEY)
+        }
+        try {
+            $previous = Crypto::parseKeyring((string) $config->get('security.crypto_previous_keys', ''));
+            new Crypto($current, $current, (int) $config->get('security.crypto_key_version', 1), $previous);
+        } catch (\InvalidArgumentException) {
+            return ['CRYPTO_KEY_VERSION (1 à 255) ou CRYPTO_PREVIOUS_KEYS (« version:base64:… », versions distinctes de la courante) invalide'];
+        }
+
+        return in_array($current, $previous, true) ? ['CRYPTO_PREVIOUS_KEYS ne doit pas contenir la clé courante'] : [];
     }
 }

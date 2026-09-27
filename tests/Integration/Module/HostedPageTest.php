@@ -218,8 +218,9 @@ final class HostedPageTest extends ModuleTestCase
     public function testCrossClientReuseRequiresBothConsents(): void
     {
         $first = $this->createProject(name: 'First');
-        $sharing = $this->createProject(['https://other.example'], acceptShared: true, name: 'Second');
-        $closed = $this->createProject(['https://third.example'], name: 'Third');
+        // Sandbox : réutilisation entre projets d'un même compte seulement (voir testSandboxSharingStaysWithinTheAccount).
+        $sharing = $this->createProject(['https://other.example'], acceptShared: true, name: 'Second', accountId: $first['project']->accountId);
+        $closed = $this->createProject(['https://third.example'], name: 'Third', accountId: $first['project']->accountId);
 
         // Vérifiée chez le premier client SANS autoriser la réutilisation : rien n'est proposé ailleurs.
         $s1 = $this->newSession($first['keys']['test'], 'nomad@example.be');
@@ -257,6 +258,63 @@ final class HostedPageTest extends ModuleTestCase
         // Jamais entre sandbox et production.
         $live = $this->newSession($sharing['keys']['live'], 'traveller@example.be');
         self::assertSame('pending', $live['status']);
+    }
+
+    public function testSandboxSharingStaysWithinTheAccount(): void
+    {
+        // En sandbox, le code est affiché à l'écran : le contrôle de l'adresse ne prouve rien. Un autre
+        // client ne doit donc pas pouvoir sonder (ni récupérer) une vérification de test partagée.
+        $first = $this->createProject(name: 'First');
+        $stranger = $this->createProject(['https://stranger.example'], acceptShared: true, name: 'Stranger');
+        $this->completeFlow($this->newSession($first['keys']['test'], 'tester@example.be')['session_id'], 'adult', true);
+        $session = $this->newSession($stranger['keys']['test'], 'tester@example.be');
+        self::assertStringNotContainsString('/shared', $this->flowUntilAfterCode($session['session_id'])->body());
+    }
+
+    public function testCodeGuessingIsCappedPerAddressAcrossSessions(): void
+    {
+        $p = $this->createProject();
+        $limit = $this->app->rateLimit('verify_code_email')[0];
+        $client = HttpClient::verify();
+        $wrong = 0;
+        $locked = null;
+        // Quatre essais par session (sous le seuil de la session), sessions ouvertes en série.
+        for ($i = 0; $i < 5 && $locked === null; $i++) {
+            $id = $this->newSession($p['keys']['test'], 'target@example.be')['session_id'];
+            $page = $client->get('/s/' . $id);
+            $client->post('/s/' . $id . '/consent', ['_state' => self::state($page), 'consent' => '1']);
+            $page = $client->get('/s/' . $id);
+            $good = self::code($page);
+            for ($j = 0; $j < 4; $j++) {
+                $client->post('/s/' . $id . '/code', ['_state' => self::state($page), 'code' => $good === '000000' ? '111111' : '000000']);
+                $wrong++;
+                if (str_contains($client->get('/s/' . $id)->body(), 'data-result-status="failed"')) {
+                    $locked = $id;
+                    break;
+                }
+            }
+        }
+        self::assertNotNull($locked, 'plafond de codes erronés par adresse atteint');
+        self::assertSame($limit + 1, $wrong, "le (N+1)e code erroné fait échouer la session");
+        self::assertSame('code_attempts_exceeded', $this->app->db()->fetchOne('SELECT failure_reason FROM verification_sessions WHERE public_id = ?', [$locked])['failure_reason']);
+    }
+
+    public function testCodeEntryIsThrottledPerIp(): void
+    {
+        $p = $this->createProject();
+        [$max] = $this->app->rateLimit('verify_code_ip');
+        $id = $this->newSession($p['keys']['test'])['session_id'];
+        $client = HttpClient::verify('198.51.100.77');
+        $page = $client->get('/s/' . $id);
+        $client->post('/s/' . $id . '/consent', ['_state' => self::state($page), 'consent' => '1']);
+        $page = $client->get('/s/' . $id);
+        for ($i = 0; $i < $max; $i++) {
+            $this->app->rateLimiter()->attempt('verify_code_ip', '198.51.100.77', $max, 3600);
+        }
+        $response = $client->post('/s/' . $id . '/code', ['_state' => self::state($page), 'code' => self::code($page)]);
+        self::assertStringContainsString('notice=throttled', (string) $response->header('Location'));
+        self::assertNull($this->app->db()->fetchOne('SELECT email_verified_at FROM verification_sessions WHERE public_id = ?', [$id])['email_verified_at']);
+        self::assertSame(0, (int) $this->app->db()->fetchOne('SELECT code_attempts FROM verification_sessions WHERE public_id = ?', [$id])['code_attempts'], 'aucun essai de la session consommé');
     }
 
     private function flowUntilAfterCode(string $sessionId): \App\Core\Response

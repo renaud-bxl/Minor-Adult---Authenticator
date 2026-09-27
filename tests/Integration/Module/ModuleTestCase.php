@@ -24,11 +24,11 @@ abstract class ModuleTestCase extends IntegrationTestCase
      * @param array{test?: string, live?: string}   $webhooks
      * @return array{project: Project, keys: array{test: string, live: string}, secrets: array{test: string, live: string}}
      */
-    protected function createProject(array $origins = [self::ORIGIN], array $webhooks = [], bool $acceptShared = false, string $name = 'Shop'): array
+    protected function createProject(array $origins = [self::ORIGIN], array $webhooks = [], bool $acceptShared = false, string $name = 'Shop', ?int $accountId = null): array
     {
         $admin = ProjectAdmin::fromApplication($this->app);
 
-        return $admin->create($admin->createAccount($name . ' SA'), $name, $origins, 18, 365, $webhooks, $acceptShared);
+        return $admin->create($accountId ?? $admin->createAccount($name . ' SA'), $name, $origins, 18, 365, $webhooks, $acceptShared);
     }
 
     /** @param array<string, mixed>|string|null $body */

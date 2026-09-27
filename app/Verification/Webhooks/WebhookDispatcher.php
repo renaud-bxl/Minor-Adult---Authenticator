@@ -89,26 +89,45 @@ final class WebhookDispatcher
         }
     }
 
-    /** @return int nombre de livraisons traitées */
+    /**
+     * Livre les webhooks échus. Verrou de concurrence : le lot est réservé (lock_token) ; la réservation
+     * de chaque livraison est prolongée juste avant son envoi, et abandonnée si un autre worker l'a
+     * reprise entre-temps (lot plus long que la réservation) : jamais deux envois simultanés.
+     *
+     * @return int nombre de livraisons traitées
+     */
     public function processDue(int $limit = 20): int
     {
-        $rows = $this->deliveries->claimDue($limit, 2 * ($this->config['timeout'] + $this->config['connect_timeout']) + 30);
+        $lockSeconds = $this->lockSeconds();
+        $rows = $this->deliveries->claimDue($limit, $lockSeconds);
+        $handled = 0;
         foreach ($rows as $row) {
-            $this->deliver($row);
+            $lock = $this->deliveries->renewLock((int) $row['id'], (string) $row['lock_token'], $lockSeconds);
+            if ($lock !== null) {
+                $this->deliver([...$row, 'lock_token' => $lock]);
+                $handled++;
+            }
         }
 
-        return count($rows);
+        return $handled;
+    }
+
+    /** Durée de réservation d'UNE livraison : délais réseau largement couverts (résolution DNS comprise). */
+    private function lockSeconds(): int
+    {
+        return 2 * ($this->config['timeout'] + $this->config['connect_timeout']) + 30;
     }
 
     /** @param array<string, mixed> $row */
     private function deliver(array $row): void
     {
         $id = (int) $row['id'];
+        $lock = (string) $row['lock_token'];
         $attempt = (int) $row['attempts'] + 1;
         $endpoint = $this->endpoints->findById((int) $row['endpoint_id']);
         $project = $this->projects->findById((int) $row['project_id']);
         if ($endpoint === null || $project === null || (int) $endpoint['enabled'] !== 1) {
-            $this->deliveries->markAttemptFailed($id, null, 'endpoint_disabled', 0, true);
+            $this->deliveries->markAttemptFailed($id, $lock, null, 'endpoint_disabled', 0, true);
 
             return;
         }
@@ -117,23 +136,23 @@ final class WebhookDispatcher
         // Contrôle SSRF à chaque envoi : les domaines autorisés ou le DNS ont pu changer.
         $urlError = $this->urls->checkUrl($url, $project->allowedOrigins);
         if ($urlError !== null) {
-            $this->deliveries->markAttemptFailed($id, null, 'url_rejected_' . $urlError, 0, true);
+            $this->deliveries->markAttemptFailed($id, $lock, null, 'url_rejected_' . $urlError, 0, true);
             $this->logger->warning('webhook_url_rejected', ['delivery' => $id, 'reason' => $urlError]);
 
             return;
         }
         [$ip, $dnsError] = $this->urls->resolvePublic((string) parse_url($url, PHP_URL_HOST));
         if ($ip === null) {
-            $this->retryOrFail($id, $attempt, null, (string) $dnsError);
+            $this->retryOrFail($id, $lock, $attempt, null, (string) $dnsError);
 
             return;
         }
 
         try {
             $payload = $this->crypto->decrypt((string) $row['payload_enc'], 'webhook:' . $row['event_id']);
-            $secret = $this->projects->signingSecret($project, (bool) $endpoint['livemode']);
+            $secrets = $this->projects->signingSecrets($project, (bool) $endpoint['livemode']);
         } catch (\Throwable $e) {
-            $this->deliveries->markAttemptFailed($id, null, 'payload_unreadable', 0, true);
+            $this->deliveries->markAttemptFailed($id, $lock, null, 'payload_unreadable', 0, true);
             $this->logger->error('webhook_payload_unreadable', ['delivery' => $id, ...Logger::exceptionContext($e)]);
 
             return;
@@ -141,7 +160,7 @@ final class WebhookDispatcher
 
         $result = $this->transport->post($url, $ip, [
             'Content-Type' => 'application/json',
-            WebhookSignature::HEADER => WebhookSignature::sign($payload, $secret, time()),
+            WebhookSignature::HEADER => WebhookSignature::signAll($payload, $secrets, time()),
             'X-VeriAge-Event-Id' => (string) $row['event_id'],
             'X-VeriAge-Event-Type' => (string) $row['event_type'],
             'X-VeriAge-Delivery-Attempt' => (string) $attempt,
@@ -149,19 +168,19 @@ final class WebhookDispatcher
 
         $status = $result['status'];
         if ($status !== null && $status >= 200 && $status < 300) {
-            $this->deliveries->markDelivered($id, $status);
+            $this->deliveries->markDelivered($id, $lock, $status);
             $this->logger->info('webhook_delivered', ['delivery' => $id, 'status' => $status, 'attempt' => $attempt]);
 
             return;
         }
-        $this->retryOrFail($id, $attempt, $status, $result['error'] ?? ('http_' . $status));
+        $this->retryOrFail($id, $lock, $attempt, $status, $result['error'] ?? ('http_' . $status));
     }
 
-    private function retryOrFail(int $id, int $attempt, ?int $status, string $error): void
+    private function retryOrFail(int $id, string $lock, int $attempt, ?int $status, string $error): void
     {
         $final = $attempt >= $this->config['max_attempts'] || $error === 'private_address';
         $delay = $final ? 0 : self::backoff($attempt, $this->config['base_delay'], $this->config['max_delay']);
-        $this->deliveries->markAttemptFailed($id, $status, $error, $delay, $final);
+        $this->deliveries->markAttemptFailed($id, $lock, $status, $error, $delay, $final);
         $this->logger->warning('webhook_attempt_failed', ['delivery' => $id, 'attempt' => $attempt, 'error' => $error, 'final' => $final]);
     }
 

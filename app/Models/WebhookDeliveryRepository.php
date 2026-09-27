@@ -50,7 +50,9 @@ final class WebhookDeliveryRepository
     }
 
     /**
-     * Réserve jusqu'à $limit livraisons échues pour $lockSeconds secondes.
+     * Réserve jusqu'à $limit livraisons échues pour $lockSeconds secondes. Chaque ligne renvoyée porte
+     * son « lock_token » : le worker doit prolonger la réservation (renewLock) juste avant chaque envoi,
+     * et ses mises à jour ne s'appliquent que s'il détient encore la réservation.
      *
      * @return list<array<string, mixed>>
      */
@@ -67,23 +69,40 @@ final class WebhookDeliveryRepository
         return $this->db->fetchAll("SELECT * FROM webhook_deliveries WHERE lock_token = ? AND status = 'pending' ORDER BY id", [$token]);
     }
 
-    public function markDelivered(int $id, int $statusCode): void
+    /**
+     * Prolonge la réservation d'une livraison juste avant son envoi, sous un NOUVEAU jeton (l'écriture
+     * change toujours la ligne : MariaDB ne compte que les lignes réellement modifiées). Renvoie null si
+     * la réservation a expiré et a été reprise par un autre worker (lot trop long) : ne pas envoyer.
+     */
+    public function renewLock(int $id, string $lockToken, int $lockSeconds): ?string
+    {
+        $renewed = random_bytes(16);
+        $updated = $this->db->execute(
+            "UPDATE webhook_deliveries SET lock_token = ?, locked_until = UTC_TIMESTAMP() + INTERVAL ? SECOND, updated_at = UTC_TIMESTAMP() "
+            . "WHERE id = ? AND lock_token = ? AND status = 'pending'",
+            [$renewed, $lockSeconds, $id, $lockToken],
+        );
+
+        return $updated === 1 ? $renewed : null;
+    }
+
+    public function markDelivered(int $id, string $lockToken, int $statusCode): void
     {
         $this->db->execute(
             "UPDATE webhook_deliveries SET status = 'delivered', attempts = attempts + 1, last_status_code = ?, last_error = NULL, "
-            . 'delivered_at = UTC_TIMESTAMP(), lock_token = NULL, locked_until = NULL, updated_at = UTC_TIMESTAMP() WHERE id = ?',
-            [$statusCode, $id],
+            . 'delivered_at = UTC_TIMESTAMP(), lock_token = NULL, locked_until = NULL, updated_at = UTC_TIMESTAMP() WHERE id = ? AND lock_token = ?',
+            [$statusCode, $id, $lockToken],
         );
     }
 
-    /** Échec d'une tentative : nouvelle tentative après $delaySeconds, ou abandon si $final. */
-    public function markAttemptFailed(int $id, ?int $statusCode, string $error, int $delaySeconds, bool $final): void
+    /** Échec d'une tentative : nouvelle tentative après $delaySeconds, ou abandon si $final (réservation détenue). */
+    public function markAttemptFailed(int $id, string $lockToken, ?int $statusCode, string $error, int $delaySeconds, bool $final): void
     {
         $this->db->execute(
             'UPDATE webhook_deliveries SET status = ?, attempts = attempts + 1, last_status_code = ?, last_error = ?, '
             . 'next_attempt_at = UTC_TIMESTAMP() + INTERVAL ? SECOND, lock_token = NULL, locked_until = NULL, '
-            . 'updated_at = UTC_TIMESTAMP() WHERE id = ?',
-            [$final ? self::FAILED : self::PENDING, $statusCode, substr($error, 0, 64), $delaySeconds, $id],
+            . 'updated_at = UTC_TIMESTAMP() WHERE id = ? AND lock_token = ?',
+            [$final ? self::FAILED : self::PENDING, $statusCode, substr($error, 0, 64), $delaySeconds, $id, $lockToken],
         );
     }
 

@@ -128,9 +128,18 @@ final class ProjectAdmin
         });
     }
 
-    public function rotateSecret(Project $project, bool $livemode): string
+    /** Durée maximale de recouvrement lors d'une rotation de secret (7 jours). */
+    public const MAX_SECRET_GRACE_SECONDS = 604800;
+
+    /**
+     * @param int $graceSeconds durée pendant laquelle l'ancien secret signe encore (0 : révocation immédiate)
+     */
+    public function rotateSecret(Project $project, bool $livemode, int $graceSeconds = 0): string
     {
-        $secret = $this->projects->rotateSigningSecret($project, $livemode);
+        if ($graceSeconds < 0 || $graceSeconds > self::MAX_SECRET_GRACE_SECONDS) {
+            throw new \InvalidArgumentException('Période de recouvrement invalide (0 à 168 heures).');
+        }
+        $secret = $this->projects->rotateSigningSecret($project, $livemode, $graceSeconds);
         $this->audit->record('project.secret_rotated', null, $project->accountId, null, $project->id, ['livemode' => $livemode]);
 
         return $secret;

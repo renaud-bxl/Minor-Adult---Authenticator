@@ -33,6 +33,8 @@ final class ErrorRenderer
         'validation_failed' => 'errors.api.validation_failed',
         'rate_limited' => 'errors.api.rate_limited',
         'email_locked' => 'errors.api.email_locked',
+        'idempotency_key_reused' => 'errors.api.idempotency_key_reused',
+        'idempotency_in_progress' => 'errors.api.idempotency_in_progress',
         'server_error' => 'errors.api.server_error',
     ];
 

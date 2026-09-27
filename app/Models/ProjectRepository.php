@@ -91,14 +91,50 @@ final class ProjectRepository
         );
     }
 
-    /** @return string le nouveau secret en clair (l'ancien cesse immédiatement de valoir) */
-    public function rotateSigningSecret(Project $project, bool $livemode): string
+    /**
+     * Secrets valables pour signer un webhook : le secret courant, puis l'ancien tant que dure la
+     * période de recouvrement d'une rotation (les webhooks portent alors deux signatures v1).
+     *
+     * @return list<string>
+     */
+    public function signingSecrets(Project $project, bool $livemode): array
     {
+        $mode = $livemode ? 'live' : 'test';
+        // Lecture en base (et non depuis l'objet Project) : courant et ancien forment un état cohérent.
+        $row = $this->db->fetchOne(
+            "SELECT signing_secret_{$mode}_enc AS current_enc, "
+            . "IF(previous_secret_{$mode}_until > UTC_TIMESTAMP(), previous_secret_{$mode}_enc, NULL) AS previous_enc FROM projects WHERE id = ?",
+            [$project->id],
+        ) ?? throw new \RuntimeException('Projet introuvable.');
+        $secrets = [$this->crypto->decrypt((string) $row['current_enc'], self::secretContext($project->publicId, $livemode))];
+        if (is_string($row['previous_enc'])) {
+            $secrets[] = $this->crypto->decrypt($row['previous_enc'], self::previousSecretContext($project->publicId, $livemode));
+        }
+
+        return $secrets;
+    }
+
+    /**
+     * Nouveau secret de signature. $graceSeconds > 0 : l'ancien secret reste accepté (deuxième signature
+     * des webhooks) pendant cette durée, le temps que le client déploie le nouveau ; 0 : il cesse
+     * immédiatement de valoir (secret compromis).
+     *
+     * @return string le nouveau secret en clair
+     */
+    public function rotateSigningSecret(Project $project, bool $livemode, int $graceSeconds = 0): string
+    {
+        $mode = $livemode ? 'live' : 'test';
+        // Relu en base : l'objet Project peut précéder une rotation récente.
+        $current = $this->signingSecret($this->findById($project->id) ?? $project, $livemode);
         $secret = self::newSecret();
-        $column = $livemode ? 'signing_secret_live_enc' : 'signing_secret_test_enc';
         $this->db->execute(
-            'UPDATE projects SET ' . $column . ' = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?',
-            [$this->crypto->encrypt($secret, self::secretContext($project->publicId, $livemode)), $project->id],
+            "UPDATE projects SET signing_secret_{$mode}_enc = ?, previous_secret_{$mode}_enc = ?, "
+            . "previous_secret_{$mode}_until = IF(? > 0, UTC_TIMESTAMP() + INTERVAL ? SECOND, NULL), updated_at = UTC_TIMESTAMP() WHERE id = ?",
+            [
+                $this->crypto->encrypt($secret, self::secretContext($project->publicId, $livemode)),
+                $graceSeconds > 0 ? $this->crypto->encrypt($current, self::previousSecretContext($project->publicId, $livemode)) : null,
+                $graceSeconds, $graceSeconds, $project->id,
+            ],
         );
 
         return $secret;
@@ -109,8 +145,14 @@ final class ProjectRepository
         return self::SECRET_PREFIX . Crypto::randomAlnum(40);
     }
 
-    private static function secretContext(string $publicId, bool $livemode): string
+    /** Données associées (AAD) du chiffrement d'un secret : le lient à son projet et à son mode. */
+    public static function secretContext(string $publicId, bool $livemode): string
     {
         return 'project-signing-secret:' . $publicId . ':' . ($livemode ? 'live' : 'test');
+    }
+
+    public static function previousSecretContext(string $publicId, bool $livemode): string
+    {
+        return 'project-previous-signing-secret:' . $publicId . ':' . ($livemode ? 'live' : 'test');
     }
 }

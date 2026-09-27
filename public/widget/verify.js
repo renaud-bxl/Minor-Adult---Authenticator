@@ -76,6 +76,18 @@
         window.dispatchEvent(event);
     }
 
+    // Sélecteur fourni par l'intégrateur (data-target, data-trigger) : invalide = ignoré, jamais d'exception.
+    function find(selector) {
+        if (typeof selector !== 'string' || selector === '') {
+            return null;
+        }
+        try {
+            return document.querySelector(selector);
+        } catch (e) {
+            return null;
+        }
+    }
+
     function css(element, styles) {
         // CSSOM : compatible avec une CSP stricte de la page hôte (aucun style inline en balisage).
         Object.keys(styles).forEach(function (property) {
@@ -279,7 +291,7 @@
             }
             return loadMessages(lang).then(function () {
                 var mobile = window.matchMedia && window.matchMedia(MOBILE_QUERY).matches;
-                var container = mode === 'iframe' && options.target ? document.querySelector(options.target) : null;
+                var container = mode === 'iframe' ? find(options.target) : null;
                 // Sur mobile, la modale et l'iframe passent en plein écran.
                 var ui = container && !mobile ? openInline(src, container) : openOverlay(src, mobile);
                 active = { session: session, mode: container && !mobile ? 'iframe' : 'modal', frame: ui.frame, teardown: ui.teardown, reported: false };
@@ -314,7 +326,7 @@
             api.open(options);
             return;
         }
-        var trigger = script.getAttribute('data-trigger') ? document.querySelector(script.getAttribute('data-trigger')) : null;
+        var trigger = find(script.getAttribute('data-trigger'));
         if (!trigger) {
             trigger = document.createElement('button');
             trigger.type = 'button';

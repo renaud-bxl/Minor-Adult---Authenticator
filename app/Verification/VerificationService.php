@@ -42,12 +42,17 @@ final class VerificationService
     public const CODE_INVALID = 'code_invalid';
     public const CODE_EXPIRED = 'code_expired';
     public const CODE_LOCKED = 'code_locked';
+    public const CODE_THROTTLED = 'throttled';
 
     /** Sel global de la preuve partagée (le hash reste poivré par APP_KEY). */
     private const SHARED_SALT = 'veriage-shared-proof-v1';
 
     private const EXTERNAL_REF_PATTERN = '/^[A-Za-z0-9_.:\-]{1,64}$/D';
     private const INPUT_FIELDS = ['email', 'min_age', 'return_url', 'lang', 'external_ref'];
+    /** Clé d'idempotence : caractères sûrs, 255 au plus (UUID conseillé) ; conservée 24 h. */
+    private const IDEMPOTENCY_KEY_PATTERN = '/^[A-Za-z0-9_.:\-]{1,255}$/D';
+    private const IDEMPOTENCY_TTL = 86400;
+    private const RATE_LIMITS = ['api_session_email', 'verify_code_send_ip', 'verify_code_ip', 'verify_code_email'];
 
     /**
      * @param array<string, mixed>          $config  section « verification » de la configuration
@@ -75,7 +80,7 @@ final class VerificationService
         private readonly array $languages,
         private readonly string $verifyUrl,
         private readonly string $timezone,
-        /** @var array<string, array{0: int, 1: int}> limites « api_session_email » et « verify_code_send_ip » */
+        /** @var array<string, array{0: int, 1: int}> limites nommées (voir fromApplication) */
         private readonly array $rateLimits,
     ) {
     }
@@ -110,7 +115,7 @@ final class VerificationService
             $languages,
             (string) $app->config->get('app.verify_url'),
             (string) $app->config->get('app.timezone'),
-            ['api_session_email' => $app->rateLimit('api_session_email'), 'verify_code_send_ip' => $app->rateLimit('verify_code_send_ip')],
+            array_combine(self::RATE_LIMITS, array_map($app->rateLimit(...), self::RATE_LIMITS)),
         );
     }
 
@@ -119,12 +124,69 @@ final class VerificationService
     // ------------------------------------------------------------------------------------------
 
     /**
-     * POST /api/v1/sessions.
+     * POST /api/v1/sessions, avec clé d'idempotence facultative (en-tête « Idempotency-Key ») : un
+     * nouvel envoi de la même requête (réseau coupé, relance du client) renvoie la même session au
+     * lieu d'en créer une seconde, pendant 24 h.
      *
+     * - même clé, même corps : réponse d'origine rejouée (corps reconstruit depuis la session ; aucune
+     *   adresse n'est conservée dans Redis), en-tête « Idempotent-Replayed: true » ;
+     * - même clé, autre corps : 422 idempotency_key_reused ;
+     * - requête d'origine encore en cours : 409 idempotency_in_progress ;
+     * - erreur (4xx, 5xx) : rien n'est mémorisé, la même clé peut être réessayée.
+     * Clés propres à chaque projet et à chaque mode.
+     *
+     * @param array<string, mixed> $input corps JSON
+     * @return array{0: int, 1: array<string, mixed>, 2: bool} [statut HTTP, corps, réponse rejouée]
+     */
+    public function createSession(ApiContext $ctx, array $input, string $ip, ?string $idempotencyKey = null): array
+    {
+        if ($idempotencyKey === null) {
+            return [...$this->createSessionOnce($ctx, $input, $ip), false];
+        }
+        if (preg_match(self::IDEMPOTENCY_KEY_PATTERN, $idempotencyKey) !== 1) {
+            throw new ApiException(422, 'validation_failed', ['Idempotency-Key' => 'invalid']);
+        }
+        $key = 'idempotency:sessions:' . $ctx->project->id . ':' . ($ctx->livemode ? 'live' : 'test') . ':' . $this->crypto->fingerprint($idempotencyKey);
+        ksort($input);
+        $request = $this->crypto->fingerprint(json_encode($input, JSON_THROW_ON_ERROR));
+
+        $stored = $this->redis->get($key);
+        if (!is_string($stored) && $this->redis->set($key, json_encode(['request' => $request], JSON_THROW_ON_ERROR), 'EX', 60, 'NX') === null) {
+            $stored = $this->redis->get($key); // requête concurrente avec la même clé
+        }
+        if (is_string($stored)) {
+            $record = json_decode($stored, true);
+            if (!is_array($record) || !hash_equals((string) ($record['request'] ?? ''), $request)) {
+                throw new ApiException(422, 'idempotency_key_reused');
+            }
+            if (!isset($record['session_id'], $record['status'])) {
+                throw new ApiException(409, 'idempotency_in_progress', [], ['Retry-After' => '1']);
+            }
+            $session = $this->sessions->findByPublicId((string) $record['session_id']);
+            if ($session !== null && $session->projectId === $ctx->project->id && $session->livemode === $ctx->livemode) {
+                return [...$this->sessionResponse($ctx->project, $session, $this->sessionEmail($session), (int) $record['status'] === 200), true];
+            }
+            // Session effacée entre-temps (droit à l'effacement, purge) : traitée comme une nouvelle requête.
+            $this->redis->set($key, json_encode(['request' => $request], JSON_THROW_ON_ERROR), 'EX', 60);
+        }
+
+        try {
+            [$status, $body] = $this->createSessionOnce($ctx, $input, $ip);
+        } catch (\Throwable $e) {
+            $this->redis->del([$key]);
+
+            throw $e;
+        }
+        $this->redis->set($key, json_encode(['request' => $request, 'session_id' => $body['session_id'], 'status' => $status], JSON_THROW_ON_ERROR), 'EX', self::IDEMPOTENCY_TTL);
+
+        return [$status, $body, false];
+    }
+
+    /**
      * @param array<string, mixed> $input corps JSON
      * @return array{0: int, 1: array<string, mixed>} [statut HTTP, corps]
      */
-    public function createSession(ApiContext $ctx, array $input, string $ip): array
+    private function createSessionOnce(ApiContext $ctx, array $input, string $ip): array
     {
         $project = $ctx->project;
         [$email, $minAge, $returnUrl, $lang, $externalRef] = $this->validateSessionInput($project, $input);
@@ -168,32 +230,37 @@ final class VerificationService
             'session' => $publicId, 'livemode' => $ctx->livemode, 'key' => $ctx->keyLast4,
         ]);
 
-        $body = [
-            'object' => 'verification_session',
-            'session_id' => $publicId,
-            'project' => $project->publicId,
-            'status' => 'pending',
-            'verify_url' => $this->verifyUrl . '/s/' . $publicId,
-            'expires_in' => (int) $this->config['session_ttl'],
-            'expires_at' => $this->iso($session->expiresAt),
-            'livemode' => $ctx->livemode,
-        ];
-
         if ($reusable !== null) {
             // Réutilisation (même client, non expirée) : résultat immédiat, non facturé.
             $this->complete($project, $session, (string) $reusable['method'], 'same_client', (bool) $reusable['is_adult'],
                 $this->utc((string) $reusable['verified_at']), $this->utc((string) $reusable['expires_at']), null, null, $ip);
-            $session = $this->sessions->findById($session->id) ?? $session;
-
-            return [200, [
-                ...$body,
-                'status' => 'verified',
-                'reused' => true,
-                'verification' => $this->verificationBody($email, $session),
-            ]];
+            $session = $this->refresh($session);
         }
 
-        return [201, $body];
+        return $this->sessionResponse($project, $session, $email, $reusable !== null);
+    }
+
+    /**
+     * Réponse de POST /api/v1/sessions : 201 (session à suivre) ou 200 (résultat réutilisé immédiat).
+     *
+     * @return array{0: int, 1: array<string, mixed>}
+     */
+    private function sessionResponse(Project $project, VerificationSession $session, string $email, bool $reused): array
+    {
+        $body = [
+            'object' => 'verification_session',
+            'session_id' => $session->publicId,
+            'project' => $project->publicId,
+            'status' => 'pending',
+            'verify_url' => $this->verifyUrl . '/s/' . $session->publicId,
+            'expires_in' => (int) $this->config['session_ttl'],
+            'expires_at' => $this->iso($session->expiresAt),
+            'livemode' => $session->livemode,
+        ];
+
+        return $reused
+            ? [200, [...$body, 'status' => 'verified', 'reused' => true, 'verification' => $this->verificationBody($email, $session)]]
+            : [201, $body];
     }
 
     /**
@@ -349,11 +416,22 @@ final class VerificationService
         return is_string($code) ? $code : null;
     }
 
-    /** @return string CODE_OK, CODE_INVALID, CODE_EXPIRED ou CODE_LOCKED */
+    /**
+     * Contrôle du code. Force brute : 5 essais par session, et au plus N codes erronés par adresse
+     * (par projet et par mode, 24 h glissantes) toutes sessions confondues, faute de quoi un attaquant
+     * pourrait ouvrir des sessions en série ; au-delà, la session échoue (et compte pour le blocage).
+     * Essais par IP bornés en plus (sans consommer d'essai de la session).
+     *
+     * @return string CODE_OK, CODE_INVALID, CODE_EXPIRED, CODE_LOCKED ou « throttled »
+     */
     public function verifyCode(Project $project, VerificationSession $session, string $rawCode, string $ip): string
     {
         /** @var array{max_attempts: int} $cfg */
         $cfg = $this->config['email_code'];
+        [$ipMax, $ipWindow] = $this->rateLimits['verify_code_ip'];
+        if (!$this->limiter->attempt('verify_code_ip', IpAddress::rateLimitKey($ip), $ipMax, $ipWindow)->allowed) {
+            return self::CODE_THROTTLED;
+        }
         $code = (string) preg_replace('/\s+/', '', $rawCode);
         if (preg_match('/^\d{6}$/D', $code) === 1
             && $this->sessions->attemptCode($session->id, $this->codeHash($session, $code), $cfg['max_attempts'])) {
@@ -373,7 +451,12 @@ final class VerificationService
         }
 
         $session = $this->refresh($session);
-        if ($session->codeAttempts >= $cfg['max_attempts']) {
+        if (!$session->isOpen($this->now()) || $session->emailVerifiedAt !== null) {
+            return self::CODE_INVALID;
+        }
+        [$emailMax, $emailWindow] = $this->rateLimits['verify_code_email'];
+        $perEmail = $this->limiter->attempt('verify_code_email', $this->scopeKey($project, $session->livemode, $session->emailHash), $emailMax, $emailWindow);
+        if ($session->codeAttempts >= $cfg['max_attempts'] || !$perEmail->allowed) {
             $this->failSession($project, $session, 'code_attempts_exceeded', null, $ip);
 
             return self::CODE_LOCKED;
@@ -396,7 +479,9 @@ final class VerificationService
         if (!$project->acceptShared || $session->emailVerifiedAt === null || !$session->isOpen($this->now())) {
             return null;
         }
-        $candidate = $this->verifications->findShared($this->sharedHash($this->sessionEmail($session)), $session->livemode, $project->id);
+        // Sandbox : entre projets d'un même compte seulement (le code y est affiché, l'adresse n'est pas prouvée).
+        $candidate = $this->verifications->findShared($this->sharedHash($this->sessionEmail($session)), $session->livemode, $project->id,
+            $session->livemode ? null : $project->accountId);
 
         return $candidate !== null && self::covers($candidate, $session->minAge) ? $candidate : null;
     }
@@ -738,7 +823,7 @@ final class VerificationService
         return $this->crypto->decrypt($session->emailEnc, self::sessionEmailContext($session->publicId));
     }
 
-    private static function sessionEmailContext(string $publicId): string
+    public static function sessionEmailContext(string $publicId): string
     {
         return 'session-email:' . $publicId;
     }

@@ -125,6 +125,52 @@ final class WebhookDeliveryTest extends ModuleTestCase
         self::assertCount(1, $repository->claimDue(10, 60), 'réservation abandonnée : reprise');
     }
 
+    public function testAStaleWorkerNeitherSendsNorOverwritesADeliveryTakenOver(): void
+    {
+        // Worker A réserve un lot puis tarde (lot plus long que sa réservation) ; B reprend la livraison.
+        $p = $this->createProject(webhooks: ['test' => 'https://shop.example/hooks']);
+        $this->completeFlow($this->newSession($p['keys']['test'])['session_id']);
+        $repository = new WebhookDeliveryRepository($this->app->db());
+        $stale = $repository->claimDue(10, 60)[0];
+        $this->app->db()->execute('UPDATE webhook_deliveries SET locked_until = UTC_TIMESTAMP() - INTERVAL 1 SECOND');
+
+        $transport = new RecordingTransport([200]);
+        self::assertSame(1, $this->dispatcher($transport, ['shop.example' => ['93.184.216.34']])->processDue());
+        self::assertCount(1, $transport->calls);
+
+        // A reprend la main : sa réservation n'est plus valable, il n'envoie rien et n'écrase rien.
+        self::assertNull($repository->renewLock((int) $stale['id'], (string) $stale['lock_token'], 60));
+        $repository->markAttemptFailed((int) $stale['id'], (string) $stale['lock_token'], 500, 'http_500', 30, false);
+        self::assertSame(['delivered', 1], [$this->delivery()['status'], (int) $this->delivery()['attempts']]);
+    }
+
+    public function testSecretRotationWithOverlapSignsWithBothSecrets(): void
+    {
+        $p = $this->createProject(webhooks: ['test' => 'https://shop.example/hooks']);
+        $admin = \App\Services\ProjectAdmin::fromApplication($this->app);
+        $old = $p['secrets']['test'];
+        $new = $admin->rotateSecret($p['project'], false, 3600);
+        $this->completeFlow($this->newSession($p['keys']['test'])['session_id']);
+        $transport = new RecordingTransport([200]);
+        $this->dispatcher($transport, ['shop.example' => ['93.184.216.34']])->processDue();
+        $call = $transport->calls[0];
+        $header = $call['headers'][WebhookSignature::HEADER];
+        self::assertSame(2, substr_count($header, 'v1='));
+        self::assertTrue(WebhookSignature::verify($call['body'], $header, $new, time()), 'nouveau secret');
+        self::assertTrue(WebhookSignature::verify($call['body'], $header, $old, time()), 'ancien secret, pendant le recouvrement');
+        self::assertFalse(WebhookSignature::verify($call['body'], $header, $p['secrets']['live'], time()));
+
+        // Fin du recouvrement (ou rotation immédiate) : seul le nouveau secret signe.
+        $this->app->db()->execute('UPDATE projects SET previous_secret_test_until = UTC_TIMESTAMP() - INTERVAL 1 SECOND');
+        $repository = new ProjectRepository($this->app->db(), $this->app->crypto());
+        self::assertSame([$new], $repository->signingSecrets($p['project'], false));
+        $newest = $admin->rotateSecret($p['project'], false, 0);
+        self::assertSame([$newest], $repository->signingSecrets($p['project'], false));
+        self::assertNull($this->app->db()->fetchOne('SELECT previous_secret_test_enc FROM projects')['previous_secret_test_enc']);
+        $this->expectException(\InvalidArgumentException::class);
+        $admin->rotateSecret($p['project'], false, 8 * 86400);
+    }
+
     public function testEnqueueIsIdempotentPerEndpointAndEvent(): void
     {
         $p = $this->createProject(webhooks: ['test' => 'https://shop.example/hooks']);

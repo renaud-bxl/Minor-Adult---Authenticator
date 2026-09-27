@@ -20,7 +20,23 @@ final class WebhookSignature
 
     public static function sign(string $payload, string $secret, int $timestamp): string
     {
-        return 't=' . $timestamp . ',v1=' . hash_hmac('sha256', $timestamp . '.' . $payload, $secret);
+        return self::signAll($payload, [$secret], $timestamp);
+    }
+
+    /**
+     * Une signature v1 par secret (rotation avec recouvrement : nouveau secret puis ancien). Le client
+     * accepte l'en-tête si l'UNE des signatures correspond à son secret.
+     *
+     * @param non-empty-list<string> $secrets
+     */
+    public static function signAll(string $payload, array $secrets, int $timestamp): string
+    {
+        $header = 't=' . $timestamp;
+        foreach ($secrets as $secret) {
+            $header .= ',v1=' . hash_hmac('sha256', $timestamp . '.' . $payload, $secret);
+        }
+
+        return $header;
     }
 
     /**

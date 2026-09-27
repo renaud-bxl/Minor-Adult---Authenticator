@@ -154,6 +154,8 @@ final class Application
         return $this->crypto ??= new Crypto(
             Crypto::decodeKey((string) $this->config->get('security.crypto_key')),
             Crypto::decodeKey((string) $this->config->get('app.key')),
+            (int) $this->config->get('security.crypto_key_version', 1),
+            Crypto::parseKeyring((string) $this->config->get('security.crypto_previous_keys', '')),
         );
     }
 

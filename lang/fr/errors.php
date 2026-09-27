@@ -28,5 +28,7 @@ return [
     'api.validation_failed' => 'Certains champs sont invalides (voir « details »).',
     'api.rate_limited' => 'Trop de requêtes. Réessayez après le délai indiqué par l’en-tête Retry-After.',
     'api.email_locked' => 'Trop d’échecs de vérification pour cette adresse. Réessayez plus tard.',
+    'api.idempotency_key_reused' => 'Cette clé d’idempotence a déjà servi pour une requête différente. Utilisez une nouvelle clé.',
+    'api.idempotency_in_progress' => 'Une requête avec cette clé d’idempotence est encore en cours. Réessayez dans un instant.',
     'api.server_error' => 'Erreur interne. Réessayez plus tard.',
 ];

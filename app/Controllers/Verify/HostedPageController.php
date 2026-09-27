@@ -35,7 +35,7 @@ final class HostedPageController extends Controller
         VerificationService::CODE_EXPIRED => ['module.notice.code_expired', 'error'],
         'code_resend_wait' => ['module.notice.code_resend_wait', 'error'],
         'code_send_limit' => ['module.notice.code_send_limit', 'error'],
-        'throttled' => ['module.notice.throttled', 'error'],
+        VerificationService::CODE_THROTTLED => ['module.notice.throttled', 'error'],
         'consent_required' => ['module.notice.consent_required', 'error'],
         'method_invalid' => ['module.notice.method_invalid', 'error'],
         'shared_unavailable' => ['module.notice.shared_unavailable', 'error'],
