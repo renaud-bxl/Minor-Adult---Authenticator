@@ -10,7 +10,8 @@ Cahier des charges complet : section de chaque phase dans `tasks/todo.md`.
 3. Après toute correction de Renaud : ajouter `[date] | ce qui a mal tourné | règle` dans `tasks/lessons.md`.
 
 ## Décisions validées (2026-09-27)
-- Domaine : `veriage.eu` (provisoire), toujours lu depuis `.env` (`APP_DOMAIN`), jamais écrit en dur.
+- Domaine de production : `veriage.eu` (provisoire). **Domaine temporaire de recette sur le VPS : `compose-web.net`** (213.156.135.222).
+  Le domaine est toujours lu depuis `.env` (`APP_DOMAIN`), jamais écrit en dur.
   Sous-domaines : `www.`, `verify.` (module + widget + API), `eid.` (certificat client).
 - Paiement : **Stripe** d'abord, derrière `PaymentGatewayInterface` (Mollie plus tard).
 - Vérification : **100 % interne**. **Aucun** fournisseur KYC externe, ni maintenant ni en secours.
