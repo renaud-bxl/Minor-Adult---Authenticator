@@ -9,3 +9,9 @@ __pycache__/
 .phpunit.cache/
 .phpunit.result.cache
 dump.rdb
+/biometrics/models/*
+!/biometrics/models/.gitkeep
+/biometrics/tests/assets/
+/biometrics/.pytest_cache/
+/storage/tmp/*
+!/storage/tmp/.gitkeep

@@ -555,3 +555,82 @@ Contrôles clavier (30 tabulations et Maj+Tab confinés dans la modale, reste de
 dans l'iframe → `veriage:closed`, focus rendu au bouton), mode iframe à 390 px (`embed=modal`, un seul
 bouton de fermeture visible), popup ouvert après le résultat avec invitation à fermer, jeton de retour
 consommé une fois (`token_replayed`) et refusé pour un autre visiteur (`owner_mismatch`).
+
+## Phase 3 : pièce d'identité + visage, biométrie 100 % locale (2026-09-27)
+
+Environnement : `php -S 127.0.0.1:8000` (module), microservice `biometrics/.venv/bin/python -m veriage_biometrics`
+sur 127.0.0.1:8765 (même `BIOMETRICS_SECRET` que `.env`), projet de démo (clé sandbox `$KEY`).
+
+### 1. Le microservice n'accepte que PHP, et seulement en local
+
+```bash
+curl -s -w " HTTP %{http_code}\n" http://127.0.0.1:8765/v1/health          # requête non signée
+{"error":"unauthorized"} HTTP 401
+curl -s -o /dev/null -w "/docs HTTP %{http_code}\n" http://127.0.0.1:8765/docs   # documentation interactive désactivée
+/docs HTTP 404
+curl -s -m3 http://192.0.2.2:8765/v1/health; echo "curl exit $?"            # interface réseau du serveur
+curl exit 7                                                                  # connexion refusée : écoute sur 127.0.0.1 seulement
+php bin/biometrics.php health                                                # requête ET réponse signées (HMAC)
+{"status":"ok","mrz_language":"mrz","tesseract":true,"landmarks":"mediapipe"}
+```
+
+### 2. Étapes de la capture protégées
+
+```bash
+S=$(curl -s -X POST $V/api/v1/sessions -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{"email":"curl.doc@example.be"}')
+GET  /s/$SID/document  (adresse non confirmée)          → 303 vers /s/$SID?shared=declined
+POST /s/$SID/document/start  sans _state                 → 419
+POST /s/$SID/document/submit sans X-VeriAge-State        → 419
+GET  /s/$SID/confirm?token=…  (preuve par code, N1)      → 303 vers /s/$SID
+GET  /s/$SID/document : Content-Security-Policy: default-src 'none'; script-src 'self'; … connect-src 'self'; … frame-ancestors 'self' <domaines du projet>
+                        Permissions-Policy: camera=(self), fullscreen=(self), microphone=(), …
+```
+
+Défis, envoi chiffré à usage unique, délai minimal, rejeu, tirages bornés, limites : `DocumentCaptureTest` (10 tests).
+
+### 3. N2 : dernière session exposée quand aucun résultat n'est réutilisable
+
+Projet à validité négative 0 h, parcours simulé « mineur » :
+
+```bash
+curl -s "$V/api/v1/verifications?email=n2%40example.be" -H "Authorization: Bearer $K"
+{"object":"verification","email":"n2@example.be","livemode":false,"status":"not_verified","is_adult":false,
+ "last_session":{"session_id":"vs_tNs1…","status":"verified","is_adult":false,"min_age":18,
+ "verified_at":"2026-09-28T00:46:06+02:00","expires_at":"2026-09-28T00:46:06+02:00","method":"mock"}}
+```
+
+### 4. Réglages en ligne de commande
+
+```bash
+php bin/project.php set-below-threshold --project=prj_2aPP… --mode=review   → Comportement sous le seuil mis à jour.
+php bin/project.php set-below-threshold --project=prj_2aPP… --mode=maybe    → Erreur : … (fail ou review). exit 1
+php bin/project.php list   → … « N2 »  âge 18  validité 365 j  sous le seuil : review
+php bin/review.php list    → Aucune revue en attente.
+php bin/review.php approve --id=999 → Revue introuvable, déjà décidée ou expirée. exit 1
+```
+
+### 5. Modèles : téléchargés une fois, somme SHA-256 imposée
+
+```bash
+biometrics/scripts/fetch_models.sh
+déjà présent et intègre : face_detection_yunet_2023mar.onnx      (… 4 fichiers)
+# Copie du script avec une somme attendue modifiée (fichier téléchargé = fichier officiel) :
+SOMME SHA-256 INVALIDE pour face_detection_yunet_2023mar.onnx : attendu 0000…, obtenu 8f2383e4… (fichier rejeté)
+exit 1   (dossier cible vide : rien n'est installé)
+```
+
+### 6. Tests
+
+- `biometrics/.venv/bin/python -m pytest -q` → **96 passed** (MRZ ICAO + vecteurs partagés, HMAC et rejeu, images,
+  OCR sur documents synthétiques photographiés : TD1 incliné/flou/retourné, TD3, chiffre falsifié ; YuNet/SFace ;
+  liveness simulé et MediaPipe réel ; moiré ; API : contrat de réponse, journaux sans donnée ; Tesseract sans
+  écriture de fichier, prouvé par strace).
+- Installation propre depuis les verrous : `pip install --require-hashes -r requirements.txt` (+ mediapipe
+  `--no-deps`, + dev) dans un venv neuf, puis les 96 tests.
+- `vendor/bin/phpunit` → voir `tasks/todo.md` (dont `BiometricsServiceTest` : PHP → Python réel sur images
+  synthétiques : majeur, 18 ans demain = mineur, visage d'une autre personne = `face_mismatch`, passeport
+  expiré = `document_expired`).
+- `python3 tools/e2e_capture.py --assets …` → **9/9** (Chromium réel : recto par la fausse caméra `.y4m`,
+  verso par fichier, selfie par caméra simulée qui suit les défis → `verified` confirmé par l'API ; vidéo fixe
+  rejouée → `liveness_failed` ; sans caméra : fichier proposé pour le document, selfie impossible), captures
+  `docs/screenshots/phase-3/`.

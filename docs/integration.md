@@ -86,9 +86,9 @@ Statuts renvoyés dans `status` :
 | `status` | Signification |
 |---|---|
 | `verified` | La vérification a abouti. `is_adult` vaut `true` ou `false` : une personne trop jeune est « vérifiée » avec `is_adult: false`. |
-| `pending` | Une session est en cours (`session_id`, `session_expires_at`). |
+| `pending` | Une session est en cours (`session_id`, `session_expires_at`). `review: true` : vérification manuelle en attente (méthode pièce d'identité + visage, projet réglé sur « revue ») ; le webhook part à la décision. |
 | `failed` | La dernière session a échoué. Motif dans `failure_reason` (voir §8). |
-| `not_verified` | Aucun résultat valable. Cela couvre aussi un résultat expiré, et un résultat qui ne permet pas de conclure pour le `min_age` demandé. |
+| `not_verified` | Aucun résultat valable. Cela couvre aussi un résultat expiré, et un résultat qui ne permet pas de conclure pour le `min_age` demandé. Si la dernière session a abouti mais que son résultat n'est plus réutilisable (par exemple un résultat négatif à validité 0 h), il est rappelé dans `last_session` (`session_id`, `status`, `is_adult`, `min_age`, `verified_at`, `expires_at`, `method`) : c'est une information, pas une vérification valable. |
 
 **Durée de validité d'un résultat :**
 
@@ -246,6 +246,15 @@ Motifs d'échec, dans `failure_reason` :
 |---|---|
 | `code_attempts_exceeded` | Trop de codes erronés pour le contrôle de l'adresse. |
 | `mock_failure` | Échec simulé (sandbox). |
+| `document_unreadable` | Pièce d'identité + visage : MRZ illisible ou chiffres de contrôle faux. |
+| `document_expired` | Document expiré. |
+| `liveness_failed` | Contrôle du vivant échoué (défis non réalisés, visage changé, rejeu suspecté). |
+| `face_not_found` | Aucun visage sur la photo du document. |
+| `face_mismatch` | Le visage ne correspond pas à la photo du document. |
+| `capture_rejected` | Images refusées par l'analyse. |
+| `capture_attempts_exceeded` | Trop de tirages de défis pour la session. |
+| `biometrics_unavailable` | Échec technique du service d'analyse (jamais réutilisé). |
+| `manual_review_rejected` | Revue manuelle défavorable. |
 
 D'autres motifs arriveront avec les méthodes réelles (phases 3 et 4).
 
@@ -358,9 +367,9 @@ Values of `status`:
 | `status` | Meaning |
 |---|---|
 | `verified` | The verification succeeded. `is_adult` is `true` or `false`: a person who is too young is "verified" with `is_adult: false`. |
-| `pending` | A session is in progress (`session_id`, `session_expires_at`). |
+| `pending` | A session is in progress (`session_id`, `session_expires_at`). `review: true`: manual review pending (identity document + face method, project set to "review"); the webhook is sent on decision. |
 | `failed` | The last session failed. Reason in `failure_reason` (see §8). |
-| `not_verified` | No valid result. This also covers an expired result, and a result that does not settle the requested `min_age`. |
+| `not_verified` | No valid result. This also covers an expired result, and a result that does not settle the requested `min_age`. If the last session completed but its result can no longer be reused (e.g. a negative result with a 0 h validity), it is given in `last_session` (`session_id`, `status`, `is_adult`, `min_age`, `verified_at`, `expires_at`, `method`): information only, not a valid verification. |
 
 **How long a result stays valid:**
 

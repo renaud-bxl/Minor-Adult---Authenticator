@@ -9,11 +9,13 @@ declare(strict_types=1);
  * @var string                                               $actionBase
  * @var string                                               $query
  */
+use App\Verification\Methods\LocalBiometricsProvider;
 use App\Verification\Methods\MockProvider;
 
-// Libellés par méthode (clés littérales ; les méthodes des phases 3 et 4 s'ajouteront ici).
+// Libellés par méthode (clés littérales ; l'eID de la phase 4 s'ajoutera ici).
 $labels = [
     MockProvider::ID => ['module.method.mock.title', 'module.method.mock.description'],
+    LocalBiometricsProvider::ID => ['module.method.id_document_face.title', 'module.method.id_document_face.description'],
 ];
 $outcomes = [
     'adult' => 'module.method.mock.adult',
@@ -31,6 +33,13 @@ $outcomes = [
 
 <?php foreach ($methods as $method): ?>
 <?php [$titleKey, $descriptionKey] = $labels[$method->id()] ?? ['module.method.generic.title', 'module.method.generic.description']; ?>
+<?php if ($method->id() === LocalBiometricsProvider::ID): ?>
+    <div class="method-card">
+        <h2><?= e(__($titleKey)) ?></h2>
+        <p class="muted"><?= e(__($descriptionKey)) ?></p>
+        <a class="button button-block" href="<?= e($actionBase . '/document' . $query) ?>" data-method="<?= e($method->id()) ?>"><?= e(__('module.method.id_document_face.start')) ?></a>
+    </div>
+<?php continue; endif; ?>
     <form method="post" action="<?= e($actionBase . '/method/' . $method->id() . $query) ?>" class="method-card"<?= $method->requiresTopLevelWindow() ? ' data-toplevel' : '' ?>>
         <input type="hidden" name="_state" value="<?= e($state) ?>">
         <h2><?= e(__($titleKey)) ?></h2>

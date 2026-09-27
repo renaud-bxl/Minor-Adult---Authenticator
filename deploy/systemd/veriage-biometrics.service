@@ -1,0 +1,61 @@
+# VeriAge : microservice biométrique local (MRZ, visage, contrôle du vivant), 127.0.0.1 UNIQUEMENT.
+# Installation (voir README, « Biométrie locale ») :
+#   - utilisateur système dédié, sans shell : useradd --system --home /nonexistent --shell /usr/sbin/nologin veriage-bio
+#   - code + venv en lecture seule pour lui ; modèles téléchargés par biometrics/scripts/fetch_models.sh ;
+#   - /etc/veriage/biometrics.env (root:veriage-bio, 0640) : BIOMETRICS_SECRET=… (même valeur que .env),
+#     BIOMETRICS_HOST=127.0.0.1, BIOMETRICS_PORT=8765 ;
+#   - systemctl enable --now veriage-biometrics
+# Chemins à adapter au répertoire du projet sur le VPS.
+[Unit]
+Description=VeriAge biometrics (local MRZ / face / liveness service)
+After=network.target
+Documentation=file:///home/veriage/web/compose-web.net/app/README.md
+
+[Service]
+Type=simple
+User=veriage-bio
+Group=veriage-bio
+WorkingDirectory=/home/veriage/web/compose-web.net/app/biometrics
+EnvironmentFile=/etc/veriage/biometrics.env
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 OMP_THREAD_LIMIT=1
+ExecStart=/home/veriage/web/compose-web.net/app/biometrics/.venv/bin/python -m veriage_biometrics
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+# Durcissement : aucune écriture sur disque (les images restent en mémoire), aucun réseau sortant.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+UMask=0077
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @mount @reboot @swap @debug @obsolete @raw-io
+# Réseau : écoute locale uniquement ; aucune connexion vers l'extérieur (pas de sortie Internet).
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+# Ressources : l'analyse (OCR + ~50 images) tient en quelques centaines de Mo.
+MemoryMax=2G
+TasksMax=64
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

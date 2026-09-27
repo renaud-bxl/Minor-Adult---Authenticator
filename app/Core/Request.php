@@ -12,6 +12,8 @@ final class Request
 {
     /** Taille maximale d'un corps JSON accepté (API). */
     public const MAX_JSON_BYTES = 65536;
+    /** Corps binaire maximal lu (envoi chiffré des images de la page hébergée, voir config/biometrics.php). */
+    public const MAX_BINARY_BYTES = 16 * 1024 * 1024;
 
     /** @var array<string, mixed> */
     private array $attributes = [];
@@ -65,6 +67,9 @@ final class Request
         $rawBody = '';
         if (self::isJsonContentType($headers['content-type'] ?? '')) {
             $rawBody = (string) file_get_contents('php://input', false, null, 0, self::MAX_JSON_BYTES + 1);
+        } elseif (self::isBinaryContentType($headers['content-type'] ?? '')) {
+            // Envoi chiffré des images de la page hébergée (CaptureCipher) : borné, jamais un fichier nommé.
+            $rawBody = (string) file_get_contents('php://input', false, null, 0, self::MAX_BINARY_BYTES + 1);
         }
 
         return new self(
@@ -78,6 +83,11 @@ final class Request
             $trustedProxies,
             $rawBody,
         );
+    }
+
+    public static function isBinaryContentType(string $contentType): bool
+    {
+        return preg_match('#^application/octet-stream\s*(?:;|$)#i', trim($contentType)) === 1;
     }
 
     public static function isJsonContentType(string $contentType): bool
@@ -158,7 +168,24 @@ final class Request
         return $this->json = $data;
     }
 
-    /** Corps brut (lu seulement pour les requêtes JSON, borné à MAX_JSON_BYTES + 1 octet). */
+    /**
+     * Corps binaire (application/octet-stream), borné à MAX_BINARY_BYTES + 1 octet.
+     *
+     * @throws ApiException 415 (type de contenu), 413 (taille, ou au-delà de $max)
+     */
+    public function binaryBody(int $max): string
+    {
+        if (!self::isBinaryContentType((string) $this->header('Content-Type'))) {
+            throw new ApiException(415, 'unsupported_media_type');
+        }
+        if (strlen($this->rawBody) > min($max, self::MAX_BINARY_BYTES)) {
+            throw new ApiException(413, 'payload_too_large');
+        }
+
+        return $this->rawBody;
+    }
+
+    /** Corps brut (lu pour les requêtes JSON et binaires, borné). */
     public function rawBody(): string
     {
         return $this->rawBody;

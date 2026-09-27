@@ -29,6 +29,8 @@ final class Project
         public readonly string $signingSecretLiveEnc,
         /** Validité d'un résultat négatif (âge non atteint), en heures ; 0 : jamais réutilisé. */
         public readonly int $negativeTtlHours = 24,
+        /** Correspondance du visage sous le seuil : « fail » (échec) ou « review » (revue manuelle). */
+        public readonly string $belowThreshold = 'fail',
     ) {
     }
 
@@ -49,6 +51,7 @@ final class Project
             (string) $row['signing_secret_test_enc'],
             (string) $row['signing_secret_live_enc'],
             (int) ($row['negative_ttl_hours'] ?? 24),
+            (string) ($row['below_threshold'] ?? 'fail'),
         );
     }
 

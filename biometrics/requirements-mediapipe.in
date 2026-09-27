@@ -1,0 +1,4 @@
+# MediaPipe est installé SANS ses dépendances déclarées (pip install --no-deps) : il exige
+# opencv-contrib-python (interface graphique, en conflit avec opencv-python-headless) et sounddevice
+# (audio), inutiles ici. Ses dépendances réellement importées sont dans requirements.in.
+mediapipe==1.0.1

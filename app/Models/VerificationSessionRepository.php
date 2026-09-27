@@ -65,6 +65,32 @@ final class VerificationSessionRepository
         ) === 1;
     }
 
+    /** Consentement biométrique (art. 9), seulement après le contrôle de l'adresse et hors revue. */
+    public function recordBiometricConsent(int $id): bool
+    {
+        return $this->db->execute(
+            "UPDATE verification_sessions SET biometric_consent_at = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP() "
+            . "WHERE id = ? AND status = 'pending' AND email_verified_at IS NOT NULL AND review_at IS NULL "
+            . "AND biometric_consent_at IS NULL AND expires_at > UTC_TIMESTAMP()",
+            [$id],
+        ) === 1;
+    }
+
+    /**
+     * Mise en revue manuelle : la session reste « pending », son expiration est repoussée du délai de
+     * décision. Une seule fois (review_at IS NULL).
+     */
+    public function markReview(int $id, int $hours, string $method): bool
+    {
+        return $this->db->execute(
+            "UPDATE verification_sessions SET review_at = UTC_TIMESTAMP(), method = ?, "
+            . "expires_at = UTC_TIMESTAMP() + INTERVAL ? HOUR, updated_at = UTC_TIMESTAMP() "
+            . "WHERE id = ? AND status = 'pending' AND review_at IS NULL AND email_verified_at IS NOT NULL "
+            . "AND expires_at > UTC_TIMESTAMP()",
+            [$method, $hours, $id],
+        ) === 1;
+    }
+
     /** Enregistre un nouveau code (haché) ; refusé si le quota d'envois est atteint ou trop rapproché. */
     /** @param string $kind « code » (6 chiffres) ou « link » (lien à usage unique) */
     public function storeCode(int $id, string $codeHash, int $ttl, int $maxSends, int $minInterval, string $kind = 'code'): bool

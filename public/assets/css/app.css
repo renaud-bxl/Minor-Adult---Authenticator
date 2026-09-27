@@ -469,6 +469,59 @@ p { margin: 0 0 1em; }
 .verify-footer { padding-top: 16px; font-size: .82rem; color: var(--text-muted); text-align: center; }
 .verify-footer p { margin: 0; }
 
+/* Capture guidée (pièce d'identité + visage). */
+.actions-center { text-align: center; margin: 18px 0 0; font-size: .92rem; }
+.capture-panel { display: grid; gap: 12px; margin-top: 8px; }
+.capture-panel h2 { font-size: 1.15rem; margin: 4px 0 0; }
+.capture-panel h2:focus { outline: none; }
+.capture-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.capture-actions .button { flex: 1 1 12rem; }
+.camera {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-small);
+    background: #0b1020;
+    aspect-ratio: 4 / 3;
+}
+.camera video { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* Selfie : aperçu en miroir (naturel pour l'utilisateur) ; les images envoyées ne le sont pas. */
+.camera video.mirrored { transform: scaleX(-1); }
+.camera-guide { position: absolute; pointer-events: none; border: 3px solid rgb(255 255 255 / 90%); box-shadow: 0 0 0 9999px rgb(8 12 24 / 45%); }
+/* Format ID-1 (85,6 × 54 mm). */
+.camera-guide-card { left: 8%; right: 8%; top: 50%; aspect-ratio: 85.6 / 54; transform: translateY(-50%); border-radius: 14px; }
+.camera-guide-face { left: 50%; top: 50%; width: 46%; aspect-ratio: 3 / 4; transform: translate(-50%, -50%); border-radius: 50%; }
+.challenge-banner {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: var(--radius-small);
+    background: rgb(8 12 24 / 82%);
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 1.05rem;
+    text-align: center;
+}
+.capture-progress { margin: 0; font-weight: 600; }
+.capture-preview { display: grid; gap: 10px; }
+.capture-preview img { width: 100%; border-radius: var(--radius-small); border: 1px solid var(--border); }
+.quality-ok { color: var(--success-text); font-weight: 600; margin: 0; }
+.quality-warning { color: var(--error-text); font-weight: 600; margin: 0; }
+.capture-sending { justify-items: center; text-align: center; padding: 24px 0; }
+.spinner {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 4px solid var(--border);
+    border-top-color: var(--brand);
+    animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#capture-error { display: grid; gap: 8px; }
+#capture-error p { margin: 0; }
+
 @media (prefers-color-scheme: dark) {
     .sandbox-banner, .sandbox-code { background: #3d3210; color: #ffe38a; border-color: #b88a00; }
 }
@@ -493,4 +546,5 @@ p { margin: 0 0 1em; }
 
 @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
+    .spinner { animation-duration: 3s; }
 }

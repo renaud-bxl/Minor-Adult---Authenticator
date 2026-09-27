@@ -48,7 +48,7 @@ final class ConfigValidator
         if ((string) $config->get('app.key') !== '' && $config->get('app.key') === $config->get('security.crypto_key')) {
             $problems[] = 'APP_KEY et CRYPTO_KEY doivent être différentes';
         }
-        $problems = [...$problems, ...self::keyringProblems($config), ...self::moduleLimitProblems($config)];
+        $problems = [...$problems, ...self::keyringProblems($config), ...self::moduleLimitProblems($config), ...self::biometricsProblems($config)];
         $demoKey = (string) $config->get('app.demo_api_key');
         if ($config->get('app.demo_enabled') === true && $demoKey !== '' && !str_starts_with($demoKey, 'sk_test_')) {
             $problems[] = 'DEMO_API_KEY doit être une clé sandbox (sk_test_…) : la démonstration ne crée jamais de session de production';
@@ -93,6 +93,55 @@ final class ConfigValidator
         }
 
         return in_array($current, $previous, true) ? ['CRYPTO_PREVIOUS_KEYS ne doit pas contenir la clé courante'] : [];
+    }
+
+    /**
+     * Biométrie locale (si activée) : secret, service sur la boucle locale seulement, seuils cohérents et
+     * dans les bornes acceptées par le microservice, dossier temporaire hors de public/.
+     *
+     * @return list<string>
+     */
+    public static function biometricsProblems(Config $config): array
+    {
+        if ($config->get('biometrics.enabled') !== true) {
+            return [];
+        }
+        $problems = [];
+        if (strlen((string) $config->get('biometrics.secret')) < 32) {
+            $problems[] = 'BIOMETRICS_SECRET doit contenir au moins 32 caractères (php bin/generate-keys.php)';
+        }
+        try {
+            \App\Verification\Biometrics\BiometricsClient::assertLoopbackUrl((string) $config->get('biometrics.url'));
+        } catch (\InvalidArgumentException) {
+            $problems[] = 'BIOMETRICS_URL doit viser la boucle locale (http://127.0.0.1:port ou http://[::1]:port)';
+        }
+        $match = (float) $config->get('biometrics.face_match_threshold');
+        $review = (float) $config->get('biometrics.face_review_threshold');
+        if ($match <= 0 || $match > 1 || $review <= 0 || $review > $match) {
+            $problems[] = 'BIOMETRICS_FACE_MATCH_THRESHOLD et BIOMETRICS_FACE_REVIEW_THRESHOLD : 0 < revue ≤ acceptation ≤ 1';
+        }
+        if (!in_array($config->get('biometrics.below_threshold_default'), ['fail', 'review'], true)) {
+            $problems[] = 'BIOMETRICS_BELOW_THRESHOLD doit valoir fail ou review';
+        }
+        $ttl = (int) $config->get('biometrics.review_ttl_hours');
+        $timeout = (int) $config->get('biometrics.timeout');
+        if ($ttl < 1 || $ttl > 168 || $timeout < 5 || $timeout > 120) {
+            $problems[] = 'BIOMETRICS_REVIEW_TTL_HOURS (1 à 168) ou BIOMETRICS_TIMEOUT (5 à 120 s) hors limites';
+        }
+        $bounds = ['yaw_threshold' => [0.1, 0.8, 'BIOMETRICS_LIVENESS_YAW'], 'blink_ratio' => [0.3, 0.9, 'BIOMETRICS_LIVENESS_BLINK_RATIO'],
+            'same_face_min' => [0.1, 0.9, 'BIOMETRICS_LIVENESS_SAME_FACE'], 'replay_threshold' => [1.0, 1000.0, 'BIOMETRICS_LIVENESS_REPLAY']];
+        foreach ($bounds as $key => [$low, $high, $env]) {
+            $value = (float) $config->get('biometrics.liveness.' . $key);
+            if ($value < $low || $value > $high) {
+                $problems[] = $env . ' doit être compris entre ' . $low . ' et ' . $high;
+            }
+        }
+        $tmp = (string) $config->get('biometrics.tmp_dir');
+        if ($tmp === '' || str_contains('/' . trim($tmp, '/') . '/', '/public/')) {
+            $problems[] = 'BIOMETRICS_TMP_DIR doit être défini, hors de public/';
+        }
+
+        return $problems;
     }
 
     /**

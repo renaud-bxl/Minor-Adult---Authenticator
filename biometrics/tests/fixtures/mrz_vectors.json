@@ -1,0 +1,301 @@
+{
+ "_comment": "Vecteurs MRZ partagés par pytest (biometrics/tests/test_mrz.py) et PHPUnit (tests/Unit/MrzTest.php). Données fictives (Utopie, spécimens ICAO 9303).",
+ "vectors": [
+  {
+   "name": "icao_td1_specimen",
+   "lines": [
+    "I<UTOD231458907<<<<<<<<<<<<<<<",
+    "7408122F1204159UTO<<<<<<<<<<<6",
+    "ERIKSSON<<ANNA<MARIA<<<<<<<<<<"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "valid": true,
+    "format": "TD1",
+    "age": 52,
+    "expired": true,
+    "birth_date": "1974-08-12",
+    "expiry_date": "2012-04-15"
+   }
+  },
+  {
+   "name": "icao_td2_specimen",
+   "lines": [
+    "I<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<",
+    "D231458907UTO7408122F1204159<<<<<<<6"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "valid": true,
+    "format": "TD2",
+    "age": 52,
+    "expired": true,
+    "birth_date": "1974-08-12",
+    "expiry_date": "2012-04-15"
+   }
+  },
+  {
+   "name": "icao_td3_specimen",
+   "lines": [
+    "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
+    "L898902C36UTO7408122F1204159ZE184226B<<<<<10"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "valid": true,
+    "format": "TD3",
+    "age": 52,
+    "expired": true,
+    "birth_date": "1974-08-12",
+    "expiry_date": "2012-04-15"
+   }
+  },
+  {
+   "name": "birthday_today_18",
+   "lines": [
+    "IDUTOUT12345675<<<<<<<<<<<<<<<",
+    "0809270F3101012UTO<<<<<<<<<<<2",
+    "SPECIMEN<<ANNA<<<<<<<<<<<<<<<<"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "valid": true,
+    "format": "TD1",
+    "age": 18,
+    "expired": false,
+    "birth_date": "2008-09-27",
+    "expiry_date": "2031-01-01"
+   }
+  },
+  {
+   "name": "birthday_tomorrow_17",
+   "lines": [
+    "IDUTOUT12345675<<<<<<<<<<<<<<<",
+    "0809281F3101012UTO<<<<<<<<<<<2",
+    "SPECIMEN<<ANNA<<<<<<<<<<<<<<<<"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "valid": true,
+    "format": "TD1",
+    "age": 17,
+    "expired": false,
+    "birth_date": "2008-09-28",
+    "expiry_date": "2031-01-01"
+   }
+  },
+  {
+   "name": "born_feb29_on_feb28_non_leap",
+   "lines": [
+    "IDUTOUT12345675<<<<<<<<<<<<<<<",
+    "0802293F3101012UTO<<<<<<<<<<<4",
+    "SPECIMEN<<ANNA<<<<<<<<<<<<<<<<"
+   ],
+   "reference_date": "2026-02-28",
+   "expected": {
+    "valid": true,
+    "format": "TD1",
+    "age": 17,
+    "expired": false,
+    "birth_date": "2008-02-29",
+    "expiry_date": "2031-01-01"
+   }
+  },
+  {
+   "name": "born_feb29_on_mar01_non_leap",
+   "lines": [
+    "IDUTOUT12345675<<<<<<<<<<<<<<<",
+    "0802293F3101012UTO<<<<<<<<<<<4",
+    "SPECIMEN<<ANNA<<<<<<<<<<<<<<<<"
+   ],
+   "reference_date": "2026-03-01",
+   "expected": {
+    "valid": true,
+    "format": "TD1",
+    "age": 18,
+    "expired": false,
+    "birth_date": "2008-02-29",
+    "expiry_date": "2031-01-01"
+   }
+  },
+  {
+   "name": "born_feb29_on_feb29_leap",
+   "lines": [
+    "IDUTOUT12345675<<<<<<<<<<<<<<<",
+    "0402291F3101012UTO<<<<<<<<<<<4",
+    "SPECIMEN<<ANNA<<<<<<<<<<<<<<<<"
+   ],
+   "reference_date": "2024-02-29",
+   "expected": {
+    "valid": true,
+    "format": "TD1",
+    "age": 20,
+    "expired": false,
+    "birth_date": "2004-02-29",
+    "expiry_date": "2031-01-01"
+   }
+  },
+  {
+   "name": "expires_today_still_valid",
+   "lines": [
+    "IDUTOUT12345675<<<<<<<<<<<<<<<",
+    "9005053F2609278UTO<<<<<<<<<<<2",
+    "SPECIMEN<<ANNA<<<<<<<<<<<<<<<<"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "valid": true,
+    "format": "TD1",
+    "age": 36,
+    "expired": false,
+    "birth_date": "1990-05-05",
+    "expiry_date": "2026-09-27"
+   }
+  },
+  {
+   "name": "expired_yesterday",
+   "lines": [
+    "IDUTOUT12345675<<<<<<<<<<<<<<<",
+    "9005053F2609267UTO<<<<<<<<<<<8",
+    "SPECIMEN<<ANNA<<<<<<<<<<<<<<<<"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "valid": true,
+    "format": "TD1",
+    "age": 36,
+    "expired": true,
+    "birth_date": "1990-05-05",
+    "expiry_date": "2026-09-26"
+   }
+  },
+  {
+   "name": "century_1900s",
+   "lines": [
+    "IDUTOUT12345675<<<<<<<<<<<<<<<",
+    "5012310F3006014UTO<<<<<<<<<<<4",
+    "SPECIMEN<<ANNA<<<<<<<<<<<<<<<<"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "valid": true,
+    "format": "TD1",
+    "age": 75,
+    "expired": false,
+    "birth_date": "1950-12-31",
+    "expiry_date": "2030-06-01"
+   }
+  },
+  {
+   "name": "td1_long_document_number",
+   "lines": [
+    "IDUTOAB1234567<89XY5<<<<<<<<<<",
+    "0003148F3105205UTO<<<<<<<<<<<8",
+    "SPECIMEN<<ANNA<<<<<<<<<<<<<<<<"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "valid": true,
+    "format": "TD1",
+    "age": 26,
+    "expired": false,
+    "birth_date": "2000-03-14",
+    "expiry_date": "2031-05-20"
+   }
+  },
+  {
+   "name": "unknown_birth_day_and_month",
+   "lines": [
+    "IDUTOUT12345675<<<<<<<<<<<<<<<",
+    "08<<<<4F3105205UTO<<<<<<<<<<<4",
+    "SPECIMEN<<ANNA<<<<<<<<<<<<<<<<"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "valid": true,
+    "format": "TD1",
+    "age": 17,
+    "expired": false,
+    "birth_date": "2008-12-31",
+    "expiry_date": "2031-05-20"
+   }
+  },
+  {
+   "name": "bad_birth_check_digit",
+   "lines": [
+    "IDUTOUT12345675<<<<<<<<<<<<<<<",
+    "0003149F3105205UTO<<<<<<<<<<<6",
+    "SPECIMEN<<ANNA<<<<<<<<<<<<<<<<"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "valid": false,
+    "format": "TD1"
+   }
+  },
+  {
+   "name": "bad_composite_check_digit",
+   "lines": [
+    "IDUTOUT12345675<<<<<<<<<<<<<<<",
+    "0003148F3105205UTO<<<<<<<<<<<7",
+    "SPECIMEN<<ANNA<<<<<<<<<<<<<<<<"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "valid": false,
+    "format": "TD1"
+   }
+  },
+  {
+   "name": "ocr_confusions_corrected",
+   "lines": [
+    "IDUT0UT12345675<<<<<<<<<<<<<<<",
+    "OOO3I48F3105205UTO<<<<<<<<<<<6",
+    "SPECIMEN<<ANNA<<<<<<<<<<<<<<<<"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "valid": true,
+    "format": "TD1",
+    "age": 26,
+    "expired": false,
+    "birth_date": "2000-03-14",
+    "expiry_date": "2031-05-20"
+   }
+  },
+  {
+   "name": "unknown_format",
+   "lines": [
+    "P<UTO",
+    "L898902C36"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "error": "mrz_unknown_format"
+   }
+  },
+  {
+   "name": "visa_rejected",
+   "lines": [
+    "V<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
+    "L8988901C4XXX4009078F96121096ZE184226B<<<<<<"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "error": "mrz_unsupported_document"
+   }
+  },
+  {
+   "name": "invalid_character",
+   "lines": [
+    "I<UTOD231458907<<<<<<<<<<<<<<<",
+    "7408122F1204159UTO<<<<<<<<<<<6",
+    "ERIKSSON<<ANNA<MARIA<<<<<<<<é<"
+   ],
+   "reference_date": "2026-09-27",
+   "expected": {
+    "error": "mrz_invalid_character"
+   }
+  }
+ ]
+}

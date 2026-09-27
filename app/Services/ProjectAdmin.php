@@ -37,6 +37,7 @@ final class ProjectAdmin
         private readonly array $allowedMinAges,
         private readonly int $defaultValidityDays,
         private readonly int $defaultNegativeTtlHours = 24,
+        private readonly string $defaultBelowThreshold = 'fail',
     ) {
     }
 
@@ -57,6 +58,7 @@ final class ProjectAdmin
             $ages,
             (int) $app->config->get('verification.default_validity_days'),
             (int) $app->config->get('verification.default_negative_ttl_hours'),
+            (string) $app->config->get('biometrics.below_threshold_default', 'fail'),
         );
     }
 
@@ -101,6 +103,10 @@ final class ProjectAdmin
 
         return $this->db->transaction(function () use ($accountId, $name, $origins, $minAge, $validityDays, $webhooks, $acceptShared, $negativeTtlHours): array {
             [$project, $secrets] = $this->projects->create($accountId, $name, $minAge, $validityDays, $origins, self::DEFAULT_METHODS, $acceptShared, $negativeTtlHours);
+            if ($this->defaultBelowThreshold === 'review') {
+                $this->projects->updateBelowThreshold($project->id, 'review');
+                $project = $this->projects->findById($project->id) ?? $project;
+            }
             $keys = ['test' => $this->keys->create($project->id, false), 'live' => $this->keys->create($project->id, true)];
             foreach ($webhooks as $mode => $url) {
                 $this->webhooks->create($project->id, $mode === 'live', $url);
@@ -117,6 +123,19 @@ final class ProjectAdmin
         self::assertNegativeTtl($hours);
         $this->projects->updateNegativeTtl($project->id, $hours);
         $this->audit->record('project.negative_ttl_updated', null, $project->accountId, null, $project->id, ['count' => $hours]);
+    }
+
+    /**
+     * Correspondance du visage sous le seuil d'acceptation : « fail » (échec) ou « review » (revue
+     * manuelle, entre le seuil de revue et le seuil d'acceptation).
+     */
+    public function setBelowThreshold(Project $project, string $mode): void
+    {
+        if (!in_array($mode, ['fail', 'review'], true)) {
+            throw new \InvalidArgumentException('Comportement sous le seuil invalide (fail ou review).');
+        }
+        $this->projects->updateBelowThreshold($project->id, $mode);
+        $this->audit->record('project.below_threshold_updated', null, $project->accountId, null, $project->id, ['result' => $mode]);
     }
 
     private static function assertNegativeTtl(int $hours): void

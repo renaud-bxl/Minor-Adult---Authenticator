@@ -39,6 +39,31 @@
 - **Garanties restant à documenter :** traitement local, pas de fournisseur externe, hébergement dans
   l'UE (VPS), chiffrement, rétention courte.
 
+### Biométrie (phase 3) : mesures en place
+
+- Consentement explicite (art. 9.2.a) sur un écran dédié, avant toute capture ; horodaté
+  (`biometric_consent_at`), sans contenu.
+- Traitement 100 % local (microservice sur 127.0.0.1, aucun service tiers, aucune sortie réseau du service).
+- Images : jamais écrites sur disque par l'application ni journalisées ; chiffrées dans le navigateur
+  (AES-256-GCM, clé propre à chaque capture) : la copie temporaire que PHP fait d'un corps de requête ne
+  contient qu'un chiffré, purgée par cron toutes les 15 minutes. Tesseract lit l'image sur son entrée
+  standard (test `test_tesseract_writes_no_file`, strace).
+- Réponse du service limitée à six champs ; PHP rejette toute réponse qui en contient d'autres.
+- Rien n'est conservé : ni âge exact, ni date de naissance, ni score (sauf, en cas de revue manuelle, le
+  score et les motifs codés, jusqu'à la purge des sessions).
+- Limites connues : la mémoire du processus n'est pas effacée octet par octet (Python) ; `LimitCORE=0`
+  empêche les vidages mémoire.
+
+### Biométrie : points à trancher ⚖️
+
+- Revue manuelle : aujourd'hui, l'opérateur ne voit que des scores. Une revue humaine réelle exigerait de
+  conserver les images (chiffrées, durée courte) : base légale, durée, information à décider.
+- Calibrage des seuils et mesure des taux d'erreur (faux rejets selon l'âge, le teint, le type de document)
+  avant la production : exigence de l'AIPD (biais, art. 22 si décision automatisée).
+- Décision entièrement automatisée (art. 22) : droit d'obtenir une intervention humaine → la revue manuelle
+  ou une autre méthode (eID) doit rester accessible.
+- Données d'entraînement des modèles : voir `docs/licences.md`.
+
 ## 4. Droits des personnes
 
 - **Effacement** : `DELETE /api/v1/verifications` (déclenché par le client) ; formulaire public en

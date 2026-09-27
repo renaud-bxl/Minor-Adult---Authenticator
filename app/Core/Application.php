@@ -15,7 +15,13 @@ use App\Models\WebhookEndpointRepository;
 use App\Services\Mailer;
 use App\Services\MailSender;
 use App\Services\QueuedMailSender;
+use App\Verification\Biometrics\BiometricsClient;
+use App\Verification\Biometrics\BiometricsTransport;
+use App\Verification\Biometrics\CaptureCipher;
+use App\Verification\Biometrics\ChallengeStore;
+use App\Verification\Biometrics\CurlBiometricsTransport;
 use App\Verification\MethodRegistry;
+use App\Verification\Methods\LocalBiometricsProvider;
 use App\Verification\Methods\MockProvider;
 use App\Verification\UrlGuard;
 use App\Verification\Webhooks\CurlWebhookTransport;
@@ -48,6 +54,7 @@ final class Application
     private ?HostMap $hostMap = null;
     private ?RedisQueue $queue = null;
     private ?CreditGateInterface $creditGate = null;
+    private ?BiometricsTransport $biometricsTransport = null;
 
     /** @var list<callable(): void> */
     private array $deferred = [];
@@ -201,7 +208,56 @@ final class Application
 
     public function methods(): MethodRegistry
     {
-        return new MethodRegistry(new MockProvider());
+        return new MethodRegistry(new MockProvider(), $this->biometricsProvider());
+    }
+
+    /**
+     * Client du microservice biométrique, ou null si la méthode n'est pas activée (BIOMETRICS_ENABLED)
+     * ou pas configurée (secret absent) : la méthode n'est alors pas proposée.
+     */
+    public function biometricsClient(): ?BiometricsClient
+    {
+        $secret = (string) $this->config->get('biometrics.secret');
+        if ($this->config->get('biometrics.enabled') !== true || strlen($secret) < 32) {
+            return null;
+        }
+
+        return new BiometricsClient(
+            $this->biometricsTransport ?? new CurlBiometricsTransport((int) $this->config->get('biometrics.connect_timeout'), (int) $this->config->get('biometrics.timeout')),
+            (string) $this->config->get('biometrics.url'),
+            $secret,
+        );
+    }
+
+    public function biometricsProvider(): LocalBiometricsProvider
+    {
+        /** @var array<string, int|float> $liveness */
+        $liveness = $this->config->get('biometrics.liveness');
+
+        return new LocalBiometricsProvider(
+            $this->biometricsClient(),
+            (float) $this->config->get('biometrics.face_match_threshold'),
+            (float) $this->config->get('biometrics.face_review_threshold'),
+            $liveness,
+            (string) $this->config->get('app.timezone'),
+            $this->logger(),
+        );
+    }
+
+    /** Remplace le transport vers le microservice (tests : faux microservice). */
+    public function setBiometricsTransport(BiometricsTransport $transport): void
+    {
+        $this->biometricsTransport = $transport;
+    }
+
+    public function challenges(): ChallengeStore
+    {
+        return new ChallengeStore($this->redis(), (int) $this->config->get('biometrics.challenge.ttl'), (int) $this->config->get('biometrics.challenge.max_attempts'));
+    }
+
+    public function captureCipher(): CaptureCipher
+    {
+        return new CaptureCipher($this->crypto()->deriveKey('capture-upload'));
     }
 
     public function webhooks(?WebhookTransport $transport = null): WebhookDispatcher

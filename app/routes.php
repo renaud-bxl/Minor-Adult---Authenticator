@@ -10,6 +10,7 @@ use App\Controllers\DashboardController;
 use App\Controllers\Demo\DemoController;
 use App\Controllers\HomeController;
 use App\Controllers\PasswordResetController;
+use App\Controllers\Verify\DocumentCaptureController;
 use App\Controllers\Verify\HostedPageController;
 use App\Core\HostMap;
 use App\Core\Router;
@@ -74,6 +75,11 @@ return static function (Router $router): void {
             $router->post('/code/resend', [HostedPageController::class, 'resendCode']);
             $router->post('/shared', [HostedPageController::class, 'shared']);
             $router->post('/method/{method:[a-z_]+}', [HostedPageController::class, 'method']);
+            // Pièce d'identité + visage (biométrie locale) : consentement dédié, défis, envoi chiffré.
+            $router->get('/document', [DocumentCaptureController::class, 'show']);
+            $router->post('/document/consent', [DocumentCaptureController::class, 'consent']);
+            $router->post('/document/start', [DocumentCaptureController::class, 'start']);
+            $router->post('/document/submit', [DocumentCaptureController::class, 'submit']);
         });
     }, HostMap::VERIFY);
 

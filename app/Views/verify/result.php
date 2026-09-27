@@ -12,6 +12,19 @@ declare(strict_types=1);
  * @var bool|null                 $canClose aucun retour possible vers le site : inviter à fermer la page
  */
 $status = (string) $result['status'];
+// Explication propre au motif d'échec (clés littérales ; motifs techniques sans détail).
+$reasonKeys = [
+    'document_unreadable' => 'module.result.reason.document_unreadable',
+    'document_expired' => 'module.result.reason.document_expired',
+    'liveness_failed' => 'module.result.reason.liveness_failed',
+    'face_mismatch' => 'module.result.reason.face_mismatch',
+    'face_not_found' => 'module.result.reason.face_not_found',
+    'biometrics_unavailable' => 'module.result.reason.biometrics_unavailable',
+    'capture_rejected' => 'module.result.reason.capture_rejected',
+    'capture_attempts_exceeded' => 'module.result.reason.capture_attempts_exceeded',
+    'manual_review_rejected' => 'module.result.reason.manual_review_rejected',
+];
+$reasonKey = $status === 'failed' ? ($reasonKeys[(string) $result['failure_reason']] ?? null) : null;
 [$titleKey, $textKey, $tone] = match (true) {
     $status === 'verified' && $result['is_adult'] === true => ['module.result.verified_title', 'module.result.verified_text', 'success'],
     $status === 'verified' => ['module.result.minor_title', 'module.result.minor_text', 'warning'],
@@ -25,6 +38,9 @@ $status = (string) $result['status'];
     <div class="result-icon" aria-hidden="true"><?= $tone === 'success' ? '✓' : ($tone === 'neutral' ? '…' : '!') ?></div>
     <h1 id="verify-title" data-result-status="<?= e($status) ?>"><?= e(__($titleKey)) ?></h1>
     <p><?= e(__($textKey, ['project' => $project->name, 'age' => (int) $result['min_age']])) ?></p>
+<?php if ($reasonKey !== null): ?>
+    <p class="muted" data-failure-reason="<?= e((string) $result['failure_reason']) ?>"><?= e(__($reasonKey)) ?></p>
+<?php endif; ?>
 <?php if ($status === 'verified' && $result['reused'] === true): ?>
     <p class="muted"><?= e(__('module.result.reused')) ?></p>
 <?php endif; ?>

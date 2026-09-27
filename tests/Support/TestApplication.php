@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Core\Application;
+use App\Verification\Biometrics\BiometricsTransport;
 
 /** Application configurée pour les tests : journaux et boîte d'envoi dans un dossier temporaire. */
 final class TestApplication
 {
+    /** Faux microservice biométrique injecté dans chaque application de test (null : transport réel). */
+    public static ?BiometricsTransport $biometrics = null;
+
     public static function directory(): string
     {
         $dir = sys_get_temp_dir() . '/veriage-tests-' . getmypid();
@@ -26,11 +30,16 @@ final class TestApplication
     {
         $dir = self::directory();
 
-        return Application::boot(dirname(__DIR__, 2), [
+        $app = Application::boot(dirname(__DIR__, 2), [
             'app.log_path' => $dir . '/logs',
             'mail.outbox' => $dir . '/mail',
             ...$overrides,
         ]);
+        if (self::$biometrics !== null) {
+            $app->setBiometricsTransport(self::$biometrics);
+        }
+
+        return $app;
     }
 
     public static function clearOutbox(): void

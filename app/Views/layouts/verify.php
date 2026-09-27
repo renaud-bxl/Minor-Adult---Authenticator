@@ -13,6 +13,8 @@ declare(strict_types=1);
  * @var bool|null                                  $livemode
  * @var array<string, string>|null                 $languageLinks
  * @var array{0: string, 1: string}|null           $notice
+ * @var bool|null                                  $biometricPage méthode biométrique : l'analyse est réelle même en sandbox
+ * @var list<string>|null                          $scripts  scripts propres à la page (public/assets)
  */
 $appName = (string) config('app.name');
 $languages = (array) config('i18n.languages');
@@ -30,6 +32,9 @@ $embed = $embed ?? ['mode' => null, 'origin' => null];
     <link rel="icon" href="<?= e(asset('img/favicon.svg')) ?>" type="image/svg+xml">
     <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">
     <script src="<?= e(asset('js/verify-page.js')) ?>" defer></script>
+<?php foreach ($scripts ?? [] as $script): ?>
+    <script src="<?= e(asset($script)) ?>" defer></script>
+<?php endforeach; ?>
 </head>
 <body class="verify-body"<?= $embed['mode'] !== null ? ' data-embed="' . e($embed['mode']) . '"' : '' ?><?= $embed['origin'] !== null ? ' data-parent-origin="' . e($embed['origin']) . '"' : '' ?><?= isset($session) ? ' data-session="' . e($session->publicId) . '"' : '' ?>>
 <div class="verify-shell">
@@ -60,7 +65,7 @@ $embed = $embed ?? ['mode' => null, 'origin' => null];
 
     <main id="main" class="verify-main">
 <?php if (isset($livemode) && $livemode === false): ?>
-        <p class="sandbox-banner" role="note"><?= e(__('module.page.sandbox')) ?></p>
+        <p class="sandbox-banner" role="note"><?= e(!empty($biometricPage) ? __('module.page.sandbox_biometric') : __('module.page.sandbox')) ?></p>
 <?php endif; ?>
 <?php if (!empty($notice)): ?>
         <div class="flash flash-<?= e($notice[1]) ?>" role="<?= $notice[1] === 'error' ? 'alert' : 'status' ?>"><p><?= e(__($notice[0])) ?></p></div>

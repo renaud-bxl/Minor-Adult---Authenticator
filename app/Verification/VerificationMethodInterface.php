@@ -31,7 +31,7 @@ interface VerificationMethodInterface
     /**
      * Exécute la vérification pour la session (adresse déjà contrôlée, consentement recueilli).
      *
-     * @param array<string, string> $input données du formulaire de la méthode
+     * @param array<string, mixed> $input données de la méthode (formulaire, ou capture validée pour la biométrie)
      *
      * @throws \InvalidArgumentException si l'entrée est invalide (erreur de saisie, 422)
      */

@@ -16,6 +16,8 @@ declare(strict_types=1);
  *       (--grace-hours : l'ancien secret signe encore les webhooks pendant ce délai ; 0 si compromis)
  *   php bin/project.php set-origins   --project=prj_… --origins=…
  *   php bin/project.php set-negative-ttl --project=prj_… --hours=24
+ *   php bin/project.php set-below-threshold --project=prj_… --mode=fail|review
+ *       (pièce d'identité + visage : correspondance sous le seuil → échec, ou revue manuelle)
  *   php bin/project.php add-webhook   --project=prj_… --mode=test|live --url=…
  *   php bin/project.php demo          (projet de démonstration ; lignes .env sur la sortie standard)
  *
@@ -100,11 +102,16 @@ try {
             echo "Validité d'un résultat négatif mise à jour.\n";
             break;
 
+        case 'set-below-threshold':
+            $admin->setBelowThreshold($project(), (string) ($option('mode') ?? throw new InvalidArgumentException('--mode=fail ou --mode=review requis.')));
+            echo "Comportement sous le seuil mis à jour.\n";
+            break;
+
         case 'list':
             $keys = new ApiKeyRepository($app->db());
             $hooks = new WebhookEndpointRepository($app->db());
             foreach ($projects->all() as $p) {
-                echo "{$p->publicId}  compte {$p->accountId}  « {$p->name} »  âge {$p->minAge}  validité {$p->validityDays} j"
+                echo "{$p->publicId}  compte {$p->accountId}  « {$p->name} »  âge {$p->minAge}  validité {$p->validityDays} j  sous le seuil : {$p->belowThreshold}"
                     . ($p->acceptShared ? '  réutilisation entre clients acceptée' : '') . "\n";
                 echo '    domaines : ' . implode(', ', $p->allowedOrigins) . "\n";
                 foreach ($keys->listForProject($p->id) as $k) {
@@ -162,7 +169,7 @@ try {
             break;
 
         default:
-            $err('Commandes : create, list, rotate-key, rotate-secret, set-origins, set-negative-ttl, add-webhook, demo (voir l\'en-tête de bin/project.php).');
+            $err('Commandes : create, list, rotate-key, rotate-secret, set-origins, set-negative-ttl, set-below-threshold, add-webhook, demo (voir l\'en-tête de bin/project.php).');
             exit($command === 'help' ? 0 : 1);
     }
 } catch (InvalidArgumentException $e) {

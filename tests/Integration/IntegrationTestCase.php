@@ -34,7 +34,7 @@ abstract class IntegrationTestCase extends TestCase
         }
 
         $db->pdo()->exec('SET FOREIGN_KEY_CHECKS = 0');
-        foreach (['webhook_deliveries', 'webhook_endpoints', 'verifications', 'verification_sessions', 'api_keys', 'projects',
+        foreach (['manual_reviews', 'webhook_deliveries', 'webhook_endpoints', 'verifications', 'verification_sessions', 'api_keys', 'projects',
             'audit_log', 'user_tokens', 'account_users', 'users', 'accounts'] as $table) {
             $db->pdo()->exec('TRUNCATE TABLE ' . $table);
         }

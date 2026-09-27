@@ -55,6 +55,11 @@ final class ProjectRepository
         return [$this->findById($id) ?? throw new \RuntimeException('Projet introuvable après création.'), $secrets];
     }
 
+    public function updateBelowThreshold(int $id, string $mode): void
+    {
+        $this->db->execute('UPDATE projects SET below_threshold = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?', [$mode, $id]);
+    }
+
     public function updateNegativeTtl(int $id, int $hours): void
     {
         $this->db->execute('UPDATE projects SET negative_ttl_hours = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?', [$hours, $id]);

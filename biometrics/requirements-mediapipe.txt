@@ -1,0 +1,8 @@
+# Produit par scripts/lock_requirements.py à partir de requirements-mediapipe.in : ne pas modifier à la main.
+# Installation : .venv/bin/pip install --require-hashes --no-deps -r requirements-mediapipe.txt
+mediapipe==1.0.1 \
+    --hash=sha256:0a9fb67957f7d28e84f485e9c6716a43367b3f6f07170f31c3f72cac1addd031 \
+    --hash=sha256:121522251afc3c135e4b7b0c341dd5e050ad1ec87631127484f3c389ae385044 \
+    --hash=sha256:4bbbb3838a99f7fdcd3cb0e071560120df45ddc48c1ad097ef1457f8600e0e77 \
+    --hash=sha256:96dc9de6bd04a6315ef424fda5c48e0929f2d78317295e75bc32c0bceeab517b \
+    --hash=sha256:d6050e773dc6698eb86324090f61af1ccab28a6f1e9f77d98fe0611cef707997

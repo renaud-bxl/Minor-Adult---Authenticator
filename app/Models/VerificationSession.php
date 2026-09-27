@@ -55,6 +55,10 @@ final class VerificationSession
         public readonly \DateTimeImmutable $createdAt,
         /** Preuve de contrôle de l'adresse : « code » (6 chiffres) ou « link » (lien à usage unique). */
         public readonly string $proofKind = 'code',
+        /** Consentement explicite au traitement biométrique (écran dédié, avant la capture). */
+        public readonly ?\DateTimeImmutable $biometricConsentAt = null,
+        /** Mise en revue manuelle (la session reste « pending » jusqu'à la décision ou l'expiration). */
+        public readonly ?\DateTimeImmutable $reviewAt = null,
     ) {
     }
 
@@ -94,6 +98,8 @@ final class VerificationSession
             $date($row['completed_at']),
             $date($row['created_at']) ?? throw new \UnexpectedValueException('created_at manquant'),
             (string) ($row['proof_kind'] ?? 'code'),
+            $date($row['biometric_consent_at'] ?? null),
+            $date($row['review_at'] ?? null),
         );
     }
 
@@ -101,6 +107,12 @@ final class VerificationSession
     public function isOpen(\DateTimeImmutable $now): bool
     {
         return $this->status === self::PENDING && $this->expiresAt > $now;
+    }
+
+    /** En attente de la décision d'un opérateur (revue manuelle) : plus aucune étape n'est possible. */
+    public function inReview(\DateTimeImmutable $now): bool
+    {
+        return $this->reviewAt !== null && $this->isOpen($now);
     }
 
     /** Statut effectif, l'expiration étant constatée sans attendre le cron. */

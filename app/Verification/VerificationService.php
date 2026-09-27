@@ -14,6 +14,7 @@ use App\Core\Logger;
 use App\Core\RateLimiter;
 use App\Core\TextInput;
 use App\Models\AuditLog;
+use App\Models\ManualReviewRepository;
 use App\Models\Project;
 use App\Models\ProjectRepository;
 use App\Models\VerificationRepository;
@@ -86,6 +87,9 @@ final class VerificationService
         /** @var array<string, array{0: int, 1: int}> limites nommées (voir fromApplication) */
         private readonly array $rateLimits,
         private readonly ?Logger $logger = null,
+        private readonly ?ManualReviewRepository $reviews = null,
+        /** Délai de décision d'une revue manuelle (heures). */
+        private readonly int $reviewTtlHours = 48,
     ) {
     }
 
@@ -121,6 +125,8 @@ final class VerificationService
             (string) $app->config->get('app.timezone'),
             array_combine(self::RATE_LIMITS, array_map($app->rateLimit(...), self::RATE_LIMITS)),
             $app->logger(),
+            new ManualReviewRepository($db),
+            (int) $app->config->get('biometrics.review_ttl_hours', 48),
         );
     }
 
@@ -305,11 +311,25 @@ final class VerificationService
         $now = $this->now();
         if ($session !== null && $session->isOpen($now)) {
             return [...$base, 'status' => 'pending', 'is_adult' => false, 'session_id' => $session->publicId,
-                'session_expires_at' => $this->iso($session->expiresAt)];
+                'session_expires_at' => $this->iso($session->expiresAt), 'review' => $session->inReview($now)];
         }
         if ($session !== null && $session->status === VerificationSession::FAILED) {
             return [...$base, 'status' => 'failed', 'is_adult' => false, 'session_id' => $session->publicId,
                 'failure_reason' => $session->failureReason, 'failed_at' => $this->iso($session->completedAt)];
+        }
+        // Dernière session terminée dont le résultat n'est plus (ou pas) réutilisable, par exemple un
+        // résultat négatif à validité 0 h : on l'expose pour que le client comprenne ce qui s'est passé,
+        // sans en faire une vérification valable (statut « not_verified »).
+        if ($session !== null && $session->status === VerificationSession::COMPLETED) {
+            return [...$base, 'status' => 'not_verified', 'is_adult' => false, 'last_session' => [
+                'session_id' => $session->publicId,
+                'status' => 'verified',
+                'is_adult' => $session->resultIsAdult === true,
+                'min_age' => $session->minAge,
+                'verified_at' => $this->iso($session->resultVerifiedAt),
+                'expires_at' => $this->iso($session->resultExpiresAt),
+                'method' => $session->method,
+            ]];
         }
 
         return [...$base, 'status' => 'not_verified', 'is_adult' => false];
@@ -569,7 +589,7 @@ final class VerificationService
      */
     public function runMethod(Project $project, VerificationSession $session, string $methodId, array $input, bool $shareOptIn, string $ip): void
     {
-        if (!$session->isOpen($this->now()) || $session->consentAt === null || $session->emailVerifiedAt === null) {
+        if (!$session->isOpen($this->now()) || $session->consentAt === null || $session->emailVerifiedAt === null || $session->reviewAt !== null) {
             return;
         }
         $method = $this->methods->find($project, $session->livemode, $methodId)
@@ -577,6 +597,11 @@ final class VerificationService
         $this->sessions->setShareOptIn($session->id, $shareOptIn);
         $outcome = $method->verify($session, $input);
 
+        if ($outcome->needsReview) {
+            $this->queueReview($project, $session, $method->id(), $outcome, $ip);
+
+            return;
+        }
         if (!$outcome->verified) {
             $this->failSession($project, $session, (string) $outcome->failureReason, $method->id(), $ip);
 
@@ -586,6 +611,103 @@ final class VerificationService
         $sharedHash = $shareOptIn ? $this->sharedHash($this->sessionEmail($session)) : null;
         $this->complete($project, $session, $method->id(), 'none', (bool) $outcome->isAdult, $now,
             $this->resultExpiry($project, (bool) $outcome->isAdult, $now), $sharedHash, null, $ip);
+    }
+
+    /**
+     * Méthode « pièce d'identité + visage » : la capture (déjà déchiffrée et validée) est analysée par le
+     * microservice ; les défis viennent du serveur (ChallengeStore), jamais du navigateur. Le choix de
+     * réutilisation entre sites a été fait sur l'écran de consentement biométrique.
+     *
+     * @param list<string> $challenge
+     */
+    public function runCapture(Project $project, VerificationSession $session, string $methodId, Biometrics\CapturePayload $capture, array $challenge, string $ip): void
+    {
+        $this->runMethod($project, $session, $methodId, [
+            'capture' => $capture,
+            'challenge' => $challenge,
+            'review_allowed' => $project->belowThreshold === 'review',
+        ], $session->shareOptIn, $ip);
+    }
+
+    /** Échec de la méthode avant l'analyse (tirages de défis épuisés) : compte pour le blocage de l'adresse. */
+    public function failCapture(Project $project, VerificationSession $session, string $reason, string $ip): void
+    {
+        if ($session->isOpen($this->now()) && $session->reviewAt === null) {
+            $this->failSession($project, $session, $reason, Methods\LocalBiometricsProvider::ID, $ip);
+        }
+    }
+
+    /**
+     * Consentement explicite au traitement biométrique (art. 9 RGPD), recueilli sur un écran dédié juste
+     * avant la capture, avec le choix facultatif de réutilisation entre sites.
+     */
+    public function recordBiometricConsent(Project $project, VerificationSession $session, bool $shareOptIn, string $ip): bool
+    {
+        if (!$this->sessions->recordBiometricConsent($session->id)) {
+            return false;
+        }
+        $this->sessions->setShareOptIn($session->id, $shareOptIn);
+        $this->audit->record('verification.biometric_consent', null, $project->accountId, $ip, $project->id, [
+            'session' => $session->publicId, 'livemode' => $session->livemode,
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Revue manuelle : la session attend la décision d'un opérateur (aucun webhook avant la décision ;
+     * l'API répond « pending » avec « review: true »). Seuls les signaux de la décision automatique sont
+     * conservés, jamais une image.
+     */
+    private function queueReview(Project $project, VerificationSession $session, string $method, VerificationOutcome $outcome, string $ip): void
+    {
+        if ($this->reviews === null) {
+            $this->failSession($project, $session, 'face_mismatch', $method, $ip);
+
+            return;
+        }
+        $evidence = $outcome->evidence ?? ['face_match_score' => null, 'liveness_passed' => false, 'reasons' => []];
+        $this->db->transaction(function () use ($project, $session, $method, $outcome, $evidence, $ip): void {
+            if (!$this->sessions->markReview($session->id, $this->reviewTtlHours, $method)) {
+                return;
+            }
+            $this->reviews?->create($session->id, $project->id, $session->livemode, $method, $evidence['face_match_score'],
+                $evidence['liveness_passed'], $evidence['reasons'], (bool) $outcome->isAdult);
+            $this->audit->record('verification.review_queued', null, $project->accountId, $ip, $project->id, [
+                'session' => $session->publicId, 'livemode' => $session->livemode, 'method' => $method,
+            ]);
+        });
+    }
+
+    /**
+     * Décision d'un opérateur sur une revue : approuvée (résultat d'âge provisoire confirmé) ou rejetée
+     * (échec « manual_review_rejected »). Webhook envoyé à ce moment-là.
+     */
+    public function decideReview(int $reviewId, bool $approve): bool
+    {
+        $review = $this->reviews?->find($reviewId);
+        if ($review === null || $review['status'] !== 'pending') {
+            return false;
+        }
+        $session = $this->sessions->findById((int) $review['session_id']);
+        $project = $session === null ? null : $this->projects->findById($session->projectId);
+        if ($session === null || $project === null || !$session->inReview($this->now())) {
+            return false;
+        }
+        if (!$this->reviews->decide($reviewId, $approve ? 'approved' : 'rejected')) {
+            return false;
+        }
+        $method = (string) $review['method'];
+        if (!$approve) {
+            $this->failSession($project, $session, 'manual_review_rejected', $method, null);
+
+            return true;
+        }
+        $now = $this->now();
+        $isAdult = (bool) $review['provisional_is_adult'];
+        $sharedHash = $session->shareOptIn ? $this->sharedHash($this->sessionEmail($session)) : null;
+
+        return $this->complete($project, $session, $method, 'none', $isAdult, $now, $this->resultExpiry($project, $isAdult, $now), $sharedHash, null, null);
     }
 
     /**
@@ -700,7 +822,7 @@ final class VerificationService
         \DateTimeImmutable $expiresAt,
         ?string $sharedHash,
         ?string $source,
-        string $ip,
+        ?string $ip,
     ): bool {
         $done = $this->db->transaction(function () use ($project, $session, $method, $reuse, $isAdult, $verifiedAt, $expiresAt, $sharedHash, $source, $ip): bool {
             if (!$this->sessions->complete($session->id, $method, $reuse, $isAdult, $verifiedAt, $expiresAt, $reuse !== 'same_client')) {
@@ -727,7 +849,7 @@ final class VerificationService
         return $done;
     }
 
-    private function failSession(Project $project, VerificationSession $session, string $reason, ?string $method, string $ip): void
+    private function failSession(Project $project, VerificationSession $session, string $reason, ?string $method, ?string $ip): void
     {
         $done = $this->db->transaction(function () use ($project, $session, $reason, $method, $ip): bool {
             if (!$this->sessions->fail($session->id, $reason, $method)) {

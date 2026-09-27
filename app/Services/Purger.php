@@ -7,12 +7,14 @@ namespace App\Services;
 use App\Core\Application;
 use App\Core\Database;
 use App\Models\AuditLog;
+use App\Models\ManualReviewRepository;
 use App\Models\VerificationRepository;
 use App\Models\VerificationSessionRepository;
 use App\Models\WebhookDeliveryRepository;
 
 /**
  * Purge planifiée (cron) : minimisation et durées de conservation (RGPD art. 5.1.c et 5.1.e).
+ * - revues manuelles sans décision dans le délai → « expired » (la session expire avec elles) ;
  * - sessions de vérification ouvertes dont le délai est dépassé → « expired » ;
  * - sessions terminées au-delà de la rétention (avec leur e-mail chiffré) ;
  * - vérifications expirées ; livraisons de webhooks terminées ; journal d'audit ancien ;
@@ -40,6 +42,8 @@ final class Purger
         $sessions = new VerificationSessionRepository($this->db);
 
         return [
+            // Avant l'expiration des sessions : une revue sans décision dans le délai est close.
+            'reviews_expired' => (new ManualReviewRepository($this->db))->expireStale(),
             'sessions_expired' => $sessions->expireStale(),
             'sessions_deleted' => $sessions->purgeOlderThan($this->retention['sessions_days']),
             'verifications_deleted' => (new VerificationRepository($this->db))->purgeExpired(),

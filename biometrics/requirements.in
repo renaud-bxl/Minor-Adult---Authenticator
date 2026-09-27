@@ -1,0 +1,10 @@
+# Dépendances d'exécution du microservice, versions figées (requirements.txt = ce fichier + dépendances
+# transitives + sommes SHA-256, produit par scripts/lock_requirements.py). Licences : docs/licences.md.
+fastapi==0.141.1
+uvicorn==0.54.0
+opencv-python-headless==4.13.0.92
+numpy==2.4.6
+# Dépendances de mediapipe (installé à part, sans ses dépendances : voir requirements-mediapipe.in).
+absl-py==2.5.0
+flatbuffers==25.12.19
+matplotlib==3.11.2

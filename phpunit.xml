@@ -55,6 +55,11 @@
         <env name="MAIL_DRIVER" value="log" force="true"/>
         <env name="MAIL_FROM_ADDRESS" value="no-reply@veriage.test" force="true"/>
         <env name="LOG_LEVEL" value="debug" force="true"/>
+        <!-- Biométrie désactivée par défaut (le .env de développement ne doit pas influencer les tests) ;
+             les tests qui l'exercent l'activent par surcharge de configuration. -->
+        <env name="BIOMETRICS_ENABLED" value="false" force="true"/>
+        <env name="BIOMETRICS_SECRET" value="" force="true"/>
+        <env name="BIOMETRICS_URL" value="http://127.0.0.1:8765" force="true"/>
         <!-- Argon2id allégé pour la vitesse des tests (la production garde 64 Mio / 4 itérations). -->
         <env name="PASSWORD_ARGON2_MEMORY" value="8192" force="true"/>
         <env name="PASSWORD_ARGON2_TIME" value="1" force="true"/>
