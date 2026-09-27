@@ -28,6 +28,15 @@ Cahier des charges complet : section de chaque phase dans `tasks/todo.md`.
 - Modèles IA : uniquement des modèles sous licence compatible avec un usage commercial (voir `docs/licences.md`).
 
 ## HestiaCP : conséquences
+- ⛔ **Le serveur héberge déjà d'autres sites : ne rien casser.** Aucune modification des configurations globales
+  (Apache, nginx, PHP, MariaDB, Redis, pare-feu) qui toucherait les sites existants. Tout changement doit être additif et isolé,
+  avec sauvegarde préalable et retour arrière documenté.
+- **Tout passe par HestiaCP** (commandes `v-*` ou panneau) : utilisateur, domaines, bases, SSL, cron, pare-feu.
+  Aucun fichier de configuration système n'est édité à la main quand Hestia sait le faire.
+- **Répertoire propre au projet** : un utilisateur Hestia dédié (`veriage`), le code dans son home
+  (ex. `/home/veriage/web/compose-web.net/app/`, docroot → `app/public/` via template Hestia dédié),
+  sa propre base MariaDB créée par Hestia, son propre pool PHP-FPM, son propre Redis (instance/port dédiés, ou base Redis
+  isolée avec mot de passe) et ses propres services systemd préfixés `veriage-`.
 - Vhosts : **templates web Hestia personnalisés** (`/usr/local/hestia/data/templates/web/...`), sources dans `deploy/hestia/`.
   Ne jamais éditer les vhosts générés (ils sont écrasés au rebuild).
 - Pare-feu et fail2ban : ceux de Hestia (`v-add-firewall-rule`), **pas d'UFW**.
