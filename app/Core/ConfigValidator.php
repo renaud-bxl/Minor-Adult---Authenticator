@@ -48,7 +48,7 @@ final class ConfigValidator
         if ((string) $config->get('app.key') !== '' && $config->get('app.key') === $config->get('security.crypto_key')) {
             $problems[] = 'APP_KEY et CRYPTO_KEY doivent être différentes';
         }
-        $problems = [...$problems, ...self::keyringProblems($config)];
+        $problems = [...$problems, ...self::keyringProblems($config), ...self::moduleLimitProblems($config)];
         $demoKey = (string) $config->get('app.demo_api_key');
         if ($config->get('app.demo_enabled') === true && $demoKey !== '' && !str_starts_with($demoKey, 'sk_test_')) {
             $problems[] = 'DEMO_API_KEY doit être une clé sandbox (sk_test_…) : la démonstration ne crée jamais de session de production';
@@ -93,5 +93,38 @@ final class ConfigValidator
         }
 
         return in_array($current, $previous, true) ? ['CRYPTO_PREVIOUS_KEYS ne doit pas contenir la clé courante'] : [];
+    }
+
+    /**
+     * Réglages du module lus dans .env : une valeur absente de la plage (ou non numérique, lue 0 par
+     * « (int) ») bloquerait tout le monde (limite à 0) ou désactiverait une protection.
+     *
+     * @return list<string>
+     */
+    private static function moduleLimitProblems(Config $config): array
+    {
+        $problems = [];
+        $limits = [
+            'verify_page_ip' => ['RATE_VERIFY_PAGE_IP_PER_MINUTE', 10_000],
+            'verify_code_ip' => ['RATE_VERIFY_CODE_IP_PER_HOUR', 10_000],
+            'verify_code_send_ip' => ['RATE_VERIFY_CODE_SEND_IP_PER_HOUR', 10_000],
+            'verify_code_global' => ['VERIFICATION_GLOBAL_CODE_FAILURES', 1_000],
+        ];
+        foreach ($limits as $name => [$env, $ceiling]) {
+            $max = (int) ($config->get('security.rate_limits.' . $name) ?? [0])[0];
+            if ($max < 1 || $max > $ceiling) {
+                $problems[] = $env . ' doit être un entier de 1 à ' . $ceiling;
+            }
+        }
+        $negativeTtl = (int) $config->get('verification.default_negative_ttl_hours', 24);
+        if ($negativeTtl < 0 || $negativeTtl > 720) {
+            $problems[] = 'VERIFICATION_NEGATIVE_TTL_HOURS doit être compris entre 0 et 720';
+        }
+        $window = (int) $config->get('verification.return_token_window', 600);
+        if ($window < 60 || $window > 3600) {
+            $problems[] = 'VERIFICATION_RETURN_TOKEN_WINDOW doit être compris entre 60 et 3600 secondes';
+        }
+
+        return $problems;
     }
 }

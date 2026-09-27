@@ -18,9 +18,7 @@ return [
     // Fenêtre (secondes) pendant laquelle un jeton de retour peut être émis après la fin de la session ;
     // au-delà, le résultat reste affiché sans jeton (le client s'appuie sur le webhook ou l'API).
     'return_token_window' => (int) env('VERIFICATION_RETURN_TOKEN_WINDOW', 600),
-    // Preuve renforcée : au-delà de ce nombre de codes erronés pour une adresse en 24 h, tous clients
-    // confondus (production), le code à 6 chiffres est remplacé par un lien à usage unique. Pas de blocage.
-    'global_code_failures' => (int) env('VERIFICATION_GLOBAL_CODE_FAILURES', 20),
+    // Preuve renforcée : seuil VERIFICATION_GLOBAL_CODE_FAILURES, lu dans security.rate_limits.verify_code_global.
     // Validité du lien à usage unique (secondes).
     'magic_link_ttl' => 900,
 

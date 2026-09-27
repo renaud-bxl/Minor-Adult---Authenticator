@@ -234,6 +234,13 @@ def main() -> int:
         ctx = context(browser)
         page = ctx.new_page()
         create_session(page, args.demo, "fr", "modal", f"kim+{stamp}@example.com")
+        # État d'origine de la page cliente, qui doit être restauré tel quel à la fermeture : un élément
+        # déjà inerte, un autre explicitement « aria-hidden=false », un style de défilement propre.
+        page.evaluate("""() => {
+            const a = document.createElement('div'); a.id = 'pre-inert'; a.inert = true; document.body.appendChild(a);
+            const b = document.createElement('div'); b.id = 'pre-visible'; b.setAttribute('aria-hidden', 'false'); document.body.appendChild(b);
+            document.documentElement.style.overflow = 'scroll';
+        }""")
         page.focus("#demo-open")
         page.keyboard.press("Enter")
         frame = page.wait_for_selector("iframe[src*='/s/vs_']").content_frame()
@@ -255,6 +262,11 @@ def main() -> int:
         check("modale : Échap dans la page hébergée ferme la modale", page.query_selector("[role=dialog]") is None)
         check("modale : focus rendu au bouton d'ouverture", page.evaluate("() => document.activeElement && document.activeElement.id === 'demo-open'"))
         check("modale : page de nouveau active", page.eval_on_selector(".shop-main", "m => !m.inert && !m.hasAttribute('aria-hidden')"))
+        check("modale : état d'origine de la page cliente restauré tel quel", page.evaluate("""() => {
+            const a = document.getElementById('pre-inert'), b = document.getElementById('pre-visible');
+            return a.inert === true && !a.hasAttribute('aria-hidden') && !b.inert && b.getAttribute('aria-hidden') === 'false'
+                && document.documentElement.style.overflow === 'scroll';
+        }"""))
         ctx.close()
 
         # 8. Mode iframe sur mobile : plein écran, un seul bouton de fermeture.

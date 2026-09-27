@@ -193,6 +193,52 @@ final class ReauditTest extends ModuleTestCase
         self::assertStringNotContainsString('target', (string) $alert['metadata']);
     }
 
+    public function testSingleUseLinkExpiresIsReplacedOnResendAndCannotBeGuessed(): void
+    {
+        $p = $this->createProject();
+        $email = 'escalated@example.be';
+        [$max, $window] = $this->app->rateLimit('verify_code_global');
+        $shared = $this->app->crypto()->hashEmail($email, 'veriage-shared-proof-v1');
+        for ($i = 0; $i < $max; $i++) {
+            $this->app->rateLimiter()->attempt('verify_code_global', $shared, $max, $window);
+        }
+        $id = $this->newSession($p['keys']['live'], $email)['session_id'];
+        $client = HttpClient::verify();
+        $base = '/s/' . $id;
+        $page = $client->get($base);
+        TestApplication::clearOutbox();
+        $client->post($base . '/consent', ['_state' => self::state($page), 'consent' => '1']);
+        $link = static function (): string {
+            $mails = TestApplication::outbox();
+            self::assertSame(1, preg_match('#/confirm\?token=([A-Za-z0-9]{32})#', (string) end($mails), $m));
+
+            return $m[1];
+        };
+        $first = $link();
+        $verified = fn (): bool => $this->app->db()->fetchOne('SELECT email_verified_at FROM verification_sessions WHERE public_id = ?', [$id])['email_verified_at'] !== null;
+        $state = self::state($client->get($base));
+
+        // Un jeton de même forme, mais inventé, ne vaut rien.
+        $client->post($base . '/code', ['_state' => $state, 'code' => str_repeat('A', 32)]);
+        self::assertFalse($verified());
+        // Expiré (15 min) : refusé.
+        $this->app->db()->execute('UPDATE verification_sessions SET code_expires_at = UTC_TIMESTAMP() - INTERVAL 1 SECOND WHERE public_id = ?', [$id]);
+        $client->post($base . '/code', ['_state' => $state, 'code' => $first]);
+        self::assertFalse($verified());
+        // Nouvel envoi : nouveau lien, l'ancien ne vaut plus.
+        $this->app->db()->execute('UPDATE verification_sessions SET code_sent_at = UTC_TIMESTAMP() - INTERVAL 2 MINUTE WHERE public_id = ?', [$id]);
+        TestApplication::clearOutbox();
+        $client->post($base . '/code/resend', ['_state' => $state]);
+        $second = $link();
+        self::assertNotSame($first, $second);
+        $client->post($base . '/code', ['_state' => $state, 'code' => $first]);
+        self::assertFalse($verified());
+        $client->post($base . '/code', ['_state' => $state, 'code' => $second]);
+        self::assertTrue($verified());
+        // Usage unique : le jeton est effacé dès qu'il a servi.
+        self::assertNull($this->app->db()->fetchOne('SELECT code_hash FROM verification_sessions WHERE public_id = ?', [$id])['code_hash']);
+    }
+
     public function testCodeErrorIsTiedToTheFieldAndStepsAreAnnounced(): void
     {
         $p = $this->createProject();

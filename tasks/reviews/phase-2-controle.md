@@ -105,3 +105,82 @@ Les défauts trouvés sont une vraie faille de concurrence dans le worker et des
   `--grace-hours=500` → code 1 ; `bin/reencrypt.php` → 0 réécriture (aucune rotation en cours). Détails :
   `docs/api-tests.md` §14.
 - Leçon ajoutée à `tasks/lessons.md` (bail de réservation par élément, écritures conditionnées au jeton).
+
+---
+
+## Contrôle des corrections (après l'audit critique)
+
+Date : 2026-09-27. Base : `git diff 4745f4d..e39a3a4` (corrections du créateur), au regard de
+`tasks/reviews/phase-2-critique.md` et `tasks/reviews/phase-2-critique-suivi.md`. Modifications du
+contrôleur non commitées.
+
+### Exigences et arbitrages : verdict
+
+| Réf. | Verdict | Vérification |
+|---|---|---|
+| E1 | Satisfaite | `resultExpiry()` : validité du projet si positif, `negative_ttl_hours` (défaut 24 h, 0 à 720) si négatif ; appliqué au résultat direct ET à la copie partagée (`min()` avec la preuve source) ; même `expires_at` en base, API, webhook, JWT et réponse de réutilisation (tous lisent `result_expires_at` / `verifications.expires_at`). 0 h : ligne créée déjà expirée, jamais réutilisée (`findValid` exige `expires_at > now`). Échec technique : `fail()` n'écrit jamais dans `verifications`. |
+| E2 | Satisfaite | `inert` + `aria-hidden` sur les frères de l'overlay (scripts exclus), état d'origine mémorisé élément par élément et restauré avant de rendre le focus ; sentinelles avant/après + filet `focusin` ; Échap dans le cadre → `postMessage({type:'close'})` vers l'origine parente validée, accepté par le widget seulement de ce cadre, de cette origine et pour cette session. |
+| E3 | Satisfaite | Présentation décidée avant l'URL : `embed=modal` pour toute superposition (y compris iframe sur mobile), `embed=iframe` seulement en ligne. E2E : un seul bouton de fermeture visible à 390 px. |
+| Q1 | Satisfaite | Compteur global (production, clé = HMAC global de l'adresse) ; au-delà de 20, lien à usage unique au lieu du code, sans blocage ; plafonds par projet inchangés ; audit `verification.proof_escalated` + avertissement journal (sans adresse ni jeton). Détail du lien ci-dessous. |
+| Q2 | Satisfaite | `canIssueReturnToken()` : fin de session (`completed_at`, ou `expires_at` pour une session expirée) + 600 s ; seuls deux points émettent un jeton (page de résultat et `/return`), tous deux gardés ; au-delà : `token: null`, `/return` renvoie à la page, bouton masqué. Durée d'usage maximale d'un jeton = fenêtre + `exp` (5 min). Démo : `jti` consommé une fois, session rattachée au visiteur. |
+| Q3 | Satisfaite, avec un manque corrigé | Clés (IP /64, projet) pour la saisie et l'envoi des codes, seuils lus dans `.env`. **Manque** : aucune validation de ces valeurs (voir correction 1). |
+
+**Lien magique (preuve renforcée).** Entropie : 32 caractères base 62 (`random_int`), ≈ 190 bits. Stockage :
+HMAC-SHA256 à clé dérivée, jamais en clair (ni en base, ni dans le journal : testé). Usage unique : la
+consommation est l'`UPDATE` atomique existant, qui efface `code_hash`. Expiration : 15 min (`code_expires_at`).
+Validation au POST seulement : le GET `/confirm` affiche une page de confirmation (les scanners de liens ne
+consomment rien). Un nouvel envoi remplace le jeton. Les essais restent bornés à 5 par session, au plafond par
+adresse et par projet, et à la limite par (IP, projet). Énumération : `/confirm` accepte n'importe quel jeton
+de forme valide et ne renvoie aucun indice. Seule fuite : la page hébergée annonce « lien envoyé » au lieu de
+« code envoyé ». Un client apprend donc que l'adresse a dépassé le seuil global, sans savoir chez qui. C'est
+acceptable, et inhérent au choix d'une preuve différente. Le jeton passe dans l'URL : il apparaîtra dans les
+journaux d'accès de l'hôte verify. Le template Hestia sans chaîne de requête (phase 0, déjà au plan) le couvre.
+
+### Corrections du contrôleur
+
+| # | Gravité | Emplacement | Problème | Correction |
+|---|---|---|---|---|
+| 1 | Moyenne | `config/security.php:68-76`, `config/verification.php:17-20`, `ConfigValidator` | Les seuils lus dans `.env` (`RATE_VERIFY_*`, `VERIFICATION_GLOBAL_CODE_FAILURES`, `VERIFICATION_NEGATIVE_TTL_HOURS`, `VERIFICATION_RETURN_TOKEN_WINDOW`) n'étaient validés nulle part. Une faute de frappe (`(int) "6OO"` → 0) mettait `verify_page_ip` à 0 : **toutes les pages hébergées en 429**. Et `VERIFICATION_NEGATIVE_TTL_HOURS=1000` faisait échouer toute création de projet ; une fenêtre de jeton énorme annulait Q2. | `ConfigValidator::moduleLimitProblems()` (refus de démarrer en production) : limites de 1 à 10 000 (seuil global de 1 à 1 000), validité négative de 0 à 720 h, fenêtre du jeton de 60 à 3 600 s. Test sur la configuration réellement livrée. |
+| 2 | Faible | `config/verification.php:23` | `verification.global_code_failures` : réglage mort, qui doublonnait `security.rate_limits.verify_code_global` (deux sources pour la même variable). | Supprimé ; commentaire vers la source réelle. |
+| 3 | Faible | `docs/integration.md` §3 | Idempotence à peine décrite : ni durée (24 h), ni `Idempotent-Replayed`, ni 409/422, ni format de la clé. | Paragraphe FR et EN conforme au code. |
+
+### Tests ajoutés (3) et E2E renforcé
+
+- `ReauditTest::testSingleUseLinkExpiresIsReplacedOnResendAndCannotBeGuessed` : jeton inventé de même forme
+  refusé, jeton expiré refusé, ancien lien invalide après renvoi, nouveau lien accepté, `code_hash` effacé
+  (usage unique).
+- `ConfigValidatorTest::testModuleLimitsFromTheEnvironmentAreChecked` : six messages attendus, et la
+  configuration par défaut est valide.
+- `tools/e2e_demo.py` : contrôle « état d'origine de la page cliente restauré tel quel ». Un élément déjà
+  `inert` le reste sans `aria-hidden` ajouté. Un `aria-hidden="false"` d'origine est conservé.
+  `documentElement.style.overflow` est restauré.
+
+### Exactitude de `docs/integration.md`
+
+J'ai relu le guide section par section face au code. Contrat des sessions, statuts, validités, `min_age`,
+lookup, effacement, en-têtes et calendrier des webhooks, claims JWT, fenêtre, codes d'erreur, `details`,
+`failure_reason`, attributs, événements et contraintes du widget : tout est exact. Seul manque :
+l'idempotence (correction 3).
+
+**Exemples de vérification de signature exécutés.** Les blocs PHP et Node.js ont été extraits tels quels du
+guide, puis confrontés à de vraies signatures produites par `WebhookSignature::sign` et `signAll`. Le corps
+contient de l'UTF-8 et un `+`. Résultats :
+- PHP, 7/7 : valide ; rotation (nouveau secret) ; rotation (ancien secret) ; mauvais secret refusé ; corps
+  altéré refusé ; horodatage à −301 s refusé ; en-tête sans `t` refusé.
+- Node.js 22, 6/6 : mêmes cas, corps en `Buffer` et en chaîne.
+
+### Résultats
+
+- `vendor/bin/phpunit` → **OK (263 tests, 1 624 assertions)** ; unit 157 / 562, intégration 106 / 1 062
+  (créateur : 261 / 1 611).
+- `php tools/check_translations.php` → **100 % fr (285/285) et en (285/285)**, 279 clés citées, 0 inconnue.
+- `CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome python3 tools/e2e_demo.py` →
+  **34/34 contrôles réussis** (créateur : 33 ; +1 restauration de l'état d'origine). Aucune interface
+  modifiée par le contrôleur : captures inchangées.
+
+### Non fait (et pourquoi)
+
+- `returnToken()` reste public sans garde interne. Les deux appelants vérifient la fenêtre. Une garde interne
+  obligerait à changer la signature pour un gain de défense en profondeur minime.
+- Les recommandations R7, R11, R15, R16 et R18 ont été reportées par le créateur avec une échéance. Ce report
+  est justifié.

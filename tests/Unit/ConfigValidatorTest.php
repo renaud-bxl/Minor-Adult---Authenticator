@@ -18,9 +18,10 @@ final class ConfigValidatorTest extends TestCase
     {
         $valid = [
             'app' => ['url' => 'https://www.veriage.eu', 'verify_url' => 'https://verify.veriage.eu', 'domain' => 'veriage.eu', 'key' => 'base64:' . base64_encode(str_repeat('a', 32))],
-            'security' => ['crypto_key' => 'base64:' . base64_encode(str_repeat('b', 32)), 'session' => ['secure_cookie' => true, 'idle_minutes' => 30]],
+            'security' => ['crypto_key' => 'base64:' . base64_encode(str_repeat('b', 32)), 'session' => ['secure_cookie' => true, 'idle_minutes' => 30],
+                'rate_limits' => ['verify_page_ip' => [600, 60], 'verify_code_ip' => [300, 3600], 'verify_code_send_ip' => [100, 3600], 'verify_code_global' => [20, 86400]]],
             'mail' => ['driver' => 'smtp', 'from_address' => 'no-reply@veriage.eu', 'queue' => 'redis'],
-            'verification' => ['allow_private_network_requested' => false],
+            'verification' => ['allow_private_network_requested' => false, 'default_negative_ttl_hours' => 24, 'return_token_window' => 600],
         ];
         $dir = sys_get_temp_dir() . '/veriage-cfg-' . bin2hex(random_bytes(4));
         mkdir($dir);
@@ -80,6 +81,35 @@ final class ConfigValidatorTest extends TestCase
             self::assertCount(1, $problems, json_encode($overrides, JSON_THROW_ON_ERROR));
             self::assertStringNotContainsString(substr($old, 7, 10), $problems[0], 'aucune clé dans le message');
         }
+    }
+
+    public function testModuleLimitsFromTheEnvironmentAreChecked(): void
+    {
+        // Valeur non numérique dans .env : « (int) » la lit 0, ce qui bloquerait toutes les pages (limite nulle).
+        $problems = ConfigValidator::productionProblems($this->config([
+            'security.rate_limits.verify_page_ip' => [0, 60],
+            'security.rate_limits.verify_code_ip' => [20_000, 3600],
+            'security.rate_limits.verify_code_send_ip' => [0, 3600],
+            'security.rate_limits.verify_code_global' => [0, 86400],
+            'verification.default_negative_ttl_hours' => 721,
+            'verification.return_token_window' => 86400,
+        ]), false);
+        self::assertSame([
+            'RATE_VERIFY_PAGE_IP_PER_MINUTE doit être un entier de 1 à 10000',
+            'RATE_VERIFY_CODE_IP_PER_HOUR doit être un entier de 1 à 10000',
+            'RATE_VERIFY_CODE_SEND_IP_PER_HOUR doit être un entier de 1 à 10000',
+            'VERIFICATION_GLOBAL_CODE_FAILURES doit être un entier de 1 à 1000',
+            'VERIFICATION_NEGATIVE_TTL_HOURS doit être compris entre 0 et 720',
+            'VERIFICATION_RETURN_TOKEN_WINDOW doit être compris entre 60 et 3600 secondes',
+        ], $problems);
+        // La configuration réellement livrée (valeurs par défaut) est valide.
+        $security = require dirname(__DIR__, 2) . '/config/security.php';
+        $verification = require dirname(__DIR__, 2) . '/config/verification.php';
+        self::assertSame([], ConfigValidator::productionProblems($this->config([
+            'security.rate_limits' => $security['rate_limits'],
+            'verification.default_negative_ttl_hours' => $verification['default_negative_ttl_hours'],
+            'verification.return_token_window' => $verification['return_token_window'],
+        ]), false));
     }
 
     public function testWebRequestsRequirePhpFpm(): void

@@ -60,6 +60,12 @@ Champs du corps de la requête :
   N'y mettez **aucune donnée personnelle** : il est renvoyé dans le webhook et le jeton.
 - Tout champ inconnu est refusé (erreur `422`, code `unknown_field`).
 
+En-tête `Idempotency-Key` (facultatif, 1 à 255 caractères parmi `A-Za-z0-9_.:-`, un UUID par exemple) :
+pendant 24 h, un nouvel envoi de la même requête avec la même clé renvoie la même session, avec l'en-tête
+`Idempotent-Replayed: true`. La même clé avec un autre corps : `422 idempotency_key_reused` ; requête
+d'origine encore en cours : `409 idempotency_in_progress`. Une erreur n'est pas mémorisée : la clé peut
+être réessayée. Les clés sont propres à chaque projet et à chaque mode.
+
 Réponses :
 
 - `201` : la session est créée et doit être suivie, `{ "session_id": "vs_…", "verify_url": "…",
@@ -327,7 +333,11 @@ Request body fields:
 - `external_ref`: optional. Your internal identifier, 1 to 64 characters from `A-Za-z0-9_.:-`. Put
   **no personal data** in it: it is sent back in the webhook and the token.
 - Unknown fields are rejected (`422` error, code `unknown_field`).
-- `Idempotency-Key` header: optional but recommended. A retry returns the same session.
+- `Idempotency-Key` header: optional but recommended (1 to 255 characters from `A-Za-z0-9_.:-`, e.g. a
+  UUID). For 24 h, resending the same request with the same key returns the same session, with the
+  `Idempotent-Replayed: true` header. Same key with another body: `422 idempotency_key_reused`; original
+  request still running: `409 idempotency_in_progress`. Errors are not remembered: the key can be retried.
+  Keys are scoped to each project and each mode.
 
 Responses:
 
