@@ -24,7 +24,7 @@ Légende : `[ ]` à faire · `[~]` en cours · `[x]` terminé (avec preuve) · `
 
 ## Phase 1 : Fondations  ← IMPLÉMENTÉE (créateur, 2026-09-27), en attente de contrôle et d'audit
 Objectif : squelette MVC fonctionnel, i18n FR+EN, authentification des comptes clients, layout. Aucune logique de vérification.
-Preuves : `vendor/bin/phpunit` → OK (après corrections de l'audit : 168 tests, 711 assertions : unit 128/421, integration 40/290) ; `php tools/check_translations.php` → 100 % fr et en ; cURL dans `docs/api-tests.md` ; captures dans `docs/screenshots/phase-1/`.
+Preuves : `vendor/bin/phpunit` → OK (après corrections de l'audit : 168 tests, 625 assertions après contrôle : unit 128/335, integration 40/290) ; `php tools/check_translations.php` → 100 % fr et en ; cURL dans `docs/api-tests.md` ; captures dans `docs/screenshots/phase-1/`.
 
 ### 1.1 Projet et configuration
 - [x] `composer.json` : PHP ≥ 8.2 (plateforme figée à 8.2.0 pour le lock), PSR-4 `App\` → `app/`. Dépendances : `vlucas/phpdotenv` 5.7, `phpmailer/phpmailer` 6.12, `predis/predis` 2.4. Dev : `phpunit/phpunit` 11.5 (justifié : tests exigés par la section 9 ; 11.x car la 12 exige PHP 8.3).
@@ -64,9 +64,9 @@ Preuves : `vendor/bin/phpunit` → OK (après corrections de l'audit : 168 tests
 - [x] Tableau de bord minimal protégé (« Bienvenue, {entreprise} »).
 - [ ] 2FA TOTP : phase 5 (voir plus bas).
 - [x] Corrections de l'audit critique (2026-09-27, suivi : `tasks/reviews/phase-1-critique-suivi.md`) :
-  - Politique de mot de passe (ASVS V2.1.7, NIST 800-63B) : liste locale de 142 515 mots de passe courants ou compromis (`resources/security/common-passwords.txt`, recherche dichotomique, aucun appel externe), mot courant décoré (« !Sunshine2026 »), suites et répétitions, contexte (nom du service, e-mail, raison sociale), NFC avant hachage. Preuves : `PasswordPolicyTest`, `InputHardeningTest`.
+  - Politique de mot de passe (ASVS V2.1.7, NIST 800-63B) : liste locale de 55 741 mots de passe courants ou compromis (451 Ko ; entrées inatteignables par la politique retirées par le contrôleur) (`resources/security/common-passwords.txt`, recherche dichotomique, aucun appel externe), mot courant décoré (« !Sunshine2026 »), suites et répétitions, contexte (nom du service, e-mail, raison sociale), NFC avant hachage. Preuves : `PasswordPolicyTest`, `InputHardeningTest`.
     Source de la liste : union dédupliquée, en minuscules NFC, entrées ≥ 4 caractères, triée par octets, de `100k-most-used-passwords-NCSC.txt` (NCSC britannique, issu de Have I Been Pwned) et `xato-net-10-million-passwords-100000.txt`, dépôt SecLists (`Passwords/Common-Credentials`, licence MIT). Dépendance de données justifiée : exigence ASVS niveau 1.
-    Régénération : `cat ncsc.txt xato.txt | tr -d '\r'` puis minuscules + NFC + tri par octets (`LC_ALL=C sort -u`) ; le test `testBlocklistLookupIsExact` vérifie le tri.
+    Régénération : `cat ncsc.txt xato.txt | tr -d '\r'` puis minuscules + NFC + tri par octets (`LC_ALL=C sort -u`), puis filtre « ≥ 12 caractères, ou ≥ 4 bordés de lettres » ; le test `testBlocklistLookupIsExact` vérifie le tri et le filtre. Origine et licence MIT : `resources/security/NOTICE.md`.
   - Inactivité de session : 30 min par défaut (ASVS V3.3.2), refus de démarrer en production au-delà. Preuve : `InputHardeningTest::testSessionIdleTimeoutIsThirtyMinutes`.
   - Champs texte : `App\Core\TextInput` (UTF-8 valide, NFC, refus Cc/Cf/Zl/Zp dont bidi et sauts de ligne, espaces compactés), appliqué à la raison sociale et aux e-mails (inscription, connexion, mot de passe oublié) ; erreur 422 traduite, plus de faux succès. Preuves : `TextInputTest`, `InputHardeningTest`.
   - Contrastes WCAG 1.4.11 : bordure des champs 4,01:1 (clair) / 4,44:1 (sombre), focus ≥ 4,47:1 / ≥ 8,98:1. Preuve : `FrontendContrastTest` + captures (focus, erreurs, mode sombre).

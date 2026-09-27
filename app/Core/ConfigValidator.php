@@ -35,7 +35,7 @@ final class ConfigValidator
                 $problems[] = $name . ' doit contenir 32 octets encodés en base64';
             }
         }
-        if ($config->get('app.key') === $config->get('security.crypto_key')) {
+        if ((string) $config->get('app.key') !== '' && $config->get('app.key') === $config->get('security.crypto_key')) {
             $problems[] = 'APP_KEY et CRYPTO_KEY doivent être différentes';
         }
         if ($config->get('mail.driver') !== 'smtp') {

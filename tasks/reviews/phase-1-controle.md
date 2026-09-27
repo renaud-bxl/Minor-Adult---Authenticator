@@ -82,3 +82,56 @@ POST `/fr/login?lang=en` sans jeton → 419 ; 6 tentatives de connexion avec un 
 422 ×5 puis 429 (`Retry-After: 899`) ; inscription → 302, compte créé, e-mail de validation écrit dans la boîte d'envoi.
 
 Captures : l'interface n'a pas changé (aucune vue, CSS ni JS modifiés) ; `docs/screenshots/phase-1/` reste valable.
+
+---
+
+## Contrôle des corrections (commit 264c85f, réponse au rapport critique)
+
+Base : `git diff b035f16..264c85f`, `tasks/reviews/phase-1-critique.md`, `tasks/reviews/phase-1-critique-suivi.md`.
+
+### Exigences bloquantes
+
+| # | Exigence | Verdict | Vérification |
+|---|---|---|---|
+| 1 | Mots de passe courants, compromis, contextuels, triviaux | **Satisfaite** | Rejouée à l'inscription : `aaaaaaaaaaaa`, `123456789012`, `password1234`, `Password1234!`, `azertyuiopqs`, `Brasserie du Lac 2026` (raison sociale « Brasserie du Lac ») → 422 ; `quiet river stones at dawn` → 302. Dichotomie vérifiée exhaustivement : 55 741 entrées toutes trouvées, 55 741 quasi-entrées (suffixe `\x01`) toutes absentes, 0,017 ms par recherche. |
+| 2 | Inactivité 30 min | **Satisfaite** | Défaut 30 (config, `.env.example`), TTL Redis réel testé, refus de démarrer en production au-delà. |
+| 3 | Contrastes WCAG 1.4.11 | **Satisfaite** | `--field-border` appliqué à `.field input` et au sélecteur ; `--focus` sur `:focus-visible` ; `FrontendContrastTest` calcule les ratios à partir des jetons réels du CSS (deux thèmes). Captures focus / erreur / sombre présentes. |
+| 4 | Validation de la raison sociale et des champs texte | **Satisfaite** | `company=Bad\xFF\xFECo` → 422 (plus de faux succès) ; `TextInput` refuse Cc/Cf/Zl/Zp, NFC, espaces compactés ; appliqué aux e-mails. |
+
+### Points surveillés
+
+- **PasswordBlocklist, taille** : 62 % des 142 515 entrées ne pouvaient jamais correspondre (la politique n'y compare que des mots de passe
+  de 12 caractères ou plus, ou le « cœur » d'un mot décoré, bordé de lettres, d'au moins 4 caractères : `123456`, `!@#$%^`, `qwerty1`…).
+  **Corrigé** : fichier réduit à 55 741 entrées, 1,17 Mo → 451 Ko, protection strictement identique ; le test vérifie désormais le tri **et**
+  l'absence d'entrée inatteignable (en une assertion, au lieu d'une par ligne). Régénération mise à jour dans `tasks/todo.md`.
+- **PasswordBlocklist, licence** : SecLists est sous MIT, qui impose de reproduire l'avis de copyright ; il manquait. **Corrigé** :
+  `resources/security/NOTICE.md` (origine, transformation, texte de la licence).
+- **PasswordBlocklist, performance** : recherche dichotomique dans le fichier, sans chargement en mémoire, ~16 lectures, 0,017 ms. Conception
+  sobre et adaptée ; rien à changer.
+- **PasswordPolicy** : règles claires, messages traduits. Réserve non bloquante : un élément de contexte de 4 caractères (partie locale
+  `info@`, `sales@`) interdit tout mot de passe qui le contient (« information… ») ; faux refus possibles mais rares, message explicite.
+- **TextInput** : simple, réutilisable (35 lignes), bien placé dans `Core`. Refuser `Cf` écarte aussi le ZWJ des émojis composés : sans
+  objet pour une raison sociale.
+- **ConfigValidator** : utile et sans secret dans les messages. Petit défaut **corrigé** : si les deux clés étaient vides, il signalait en
+  plus « APP_KEY et CRYPTO_KEY doivent être différentes » ; la comparaison n'a plus lieu qu'avec des clés renseignées. L'exigence PHP-FPM
+  en production web est cohérente avec `fastcgi_finish_request()` (anti-énumération) et avec HestiaCP.
+- **Sessions anonymes** : inchangées (aucune session pour l'accueil ni l'API ; sessions de formulaire à 30 min d'inactivité). Pas de régression.
+- **.htaccess** : `CGIPassAuth On` (sous `IfVersion`) plus le repli par réécriture est le schéma usuel, sans effet hors du docroot.
+  Point à vérifier en phase 0 : `CGIPassAuth` dans un `.htaccess` exige `AllowOverride AuthConfig` (ou `All`, le cas des templates Hestia) ;
+  sinon Apache répondrait 500 sur tout le site. L'exception `/.well-known/` est correcte (les fichiers cachés qu'il contiendrait restent refusés).
+- **Autres changements** (idempotence du lien de validation, flash paramétré, rétention des journaux, `Auto-Submitted`, `Hostname`) :
+  corrects, testés. Ordre des `use` corrigé dans `Controller.php`.
+
+### Résultats
+
+```
+vendor/bin/phpunit --testsuite unit         OK (128 tests, 335 assertions)
+vendor/bin/phpunit --testsuite integration  OK (40 tests, 290 assertions)
+vendor/bin/phpunit                          OK (168 tests, 625 assertions)
+php tools/check_translations.php            fr 100.0 % (138/138) OK, en 100.0 % (138/138) OK ; 132 clés citées, 0 inconnue ; SUCCÈS
+```
+
+La baisse du nombre d'assertions (711 → 625) vient du test de la liste, qui contrôlait une entrée sur 997 d'un fichier désormais 2,6 fois plus
+court ; l'exactitude de la dichotomie a été vérifiée exhaustivement hors suite (ci-dessus).
+
+Verdict du contrôleur : les 4 exigences bloquantes sont satisfaites, aucune régression constatée ; prêt pour le nouvel audit critique.

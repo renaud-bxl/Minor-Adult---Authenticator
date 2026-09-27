@@ -117,7 +117,13 @@ final class PasswordPolicyTest extends TestCase
     {
         $blocklist = new PasswordBlocklist(self::BLOCKLIST);
         $lines = file(self::BLOCKLIST, FILE_IGNORE_NEW_LINES) ?: [];
-        self::assertGreaterThan(100000, count($lines));
+        self::assertGreaterThan(50000, count($lines));
+
+        // Seules les entrées atteignables sont conservées : 12 caractères ou plus (comparaison directe),
+        // ou 4 caractères ou plus bordés de lettres (mot courant décoré : « !Soleil2026 » → « soleil »).
+        $useless = array_filter($lines, static fn (string $line): bool => mb_strlen($line) < 12
+            && (mb_strlen($line) < 4 || preg_match('/^\p{L}.*\p{L}$/us', $line) !== 1));
+        self::assertSame([], array_slice($useless, 0, 5), 'entrées inatteignables');
 
         $sorted = $lines;
         sort($sorted, SORT_STRING);

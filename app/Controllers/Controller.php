@@ -7,9 +7,9 @@ namespace App\Controllers;
 use App\Core\Application;
 use App\Core\IpAddress;
 use App\Core\RateLimitResult;
-use App\Core\TextInput;
 use App\Core\Request;
 use App\Core\Response;
+use App\Core\TextInput;
 use App\Services\PasswordBlocklist;
 use App\Services\PasswordPolicy;
 
