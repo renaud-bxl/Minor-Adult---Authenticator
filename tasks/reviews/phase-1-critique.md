@@ -1,4 +1,4 @@
-VERDICT : REJETÉ
+VERDICT : APPROUVÉ (après ré-audit du 2026-09-27 ; verdict initial : REJETÉ)
 
 # Phase 1 : audit critique
 
@@ -138,3 +138,59 @@ visées par la grille (ASVS niveau 2, WCAG AA). Aucune refonte n'est demandée.
 
 Les exigences 1 à 4 corrigées, chacune avec son test ; `vendor/bin/phpunit` et `php tools/check_translations.php` verts ;
 captures régénérées (exigence 3). Les recommandations peuvent être planifiées dans `tasks/todo.md` (phases 0, 2, 5, 8, 9, 10).
+
+---
+
+## Ré-audit (2026-09-27)
+
+Base : `git diff 2faa514..28dca2d` (le hash `7c3ba9f` indiqué n'existe pas ; `2faa514` est le commit du rapport critique),
+corrections du créateur (`264c85f`) et du contrôleur (`28dca2d`), `tasks/reviews/phase-1-critique-suivi.md`, section
+« Contrôle des corrections » de `tasks/reviews/phase-1-controle.md`. Tout a été revérifié par exécution, sans me fier aux rapports.
+
+### Exécution
+
+| Contrôle | Résultat |
+|---|---|
+| `vendor/bin/phpunit` | OK (168 tests, 625 assertions) |
+| `php tools/check_translations.php` | fr 100 % (138/138), en 100 % (138/138), 132 clés citées, 0 inconnue |
+| `php bin/migrate.php` sur base vierge | 5 migrations appliquées |
+| `APP_ENV=production php bin/migrate.php --status` (config de dev) | refus, `exit=1`, problèmes listés dans le journal sans aucun secret |
+| Parcours cURL complet (nouvelle base, Redis base 7) | inscription 302 → validation 302 → **second clic sur le même lien 302 (idempotent)** → jeton inventé 400 → connexion 302 → tableau de bord (`Société Générale &amp; Fils`, NFC, échappé) → déconnexion sans jeton 419, avec jeton 302 → mot de passe oublié → flash « valable 60 minutes » → réinitialisation 302 → rejeu 400 → e-mail avec `Auto-Submitted: auto-generated` et `Message-ID …@veriage.eu` |
+| Sondes d'attaque rejouées | `//evil.com/` reste interne, `%0d%0a`, `%ff` → 404, POST sans CSRF → 419, aucun nouveau `level:error` dans le journal |
+| Captures | 43 fichiers ; vérifiées : `etat-focus-fr` (anneau brun nettement visible, bordures de champs lisibles), `etat-erreur-inscription-fr-sombre` (erreurs par champ, thème sombre cohérent) |
+
+### Exigences bloquantes
+
+| # | Exigence | Statut | Preuve du critique |
+|---|---|---|---|
+| 1 | Mots de passe courants, compromis, triviaux, contextuels | **Levée** | À l'inscription : `aaaaaaaaaaaa`, `123456789012`, `azertyuiopqs` → 422 « trop prévisible » ; `password1234`, `Password1234!`, `qwertyuiop123`, `iloveyou2026!!`, `motdepasse123`, `P@ssw0rd12345` → 422 « parmi les plus utilisés » ; `Brasserie du Lac 2026` (raison sociale « Brasserie du Lac ») et `veriage is great` → 422 « contextuel » ; `quiet river stones at dawn` → 302. Liste locale triée par octets (`LC_ALL=C sort -c` OK), recherche dichotomique 0,15 ms pour 4 recherches, aucune donnée chargée en mémoire, aucun appel externe. Licence MIT reproduite dans `resources/security/NOTICE.md`. Politique aussi appliquée à la réinitialisation. |
+| 2 | Inactivité de session ≤ 30 min | **Levée** | TTL Redis mesuré sur une session réelle : 1800 s ; défaut 30 dans `config/security.php` et `.env.example` ; refus de démarrer en production au-delà (`ConfigValidator`). |
+| 3 | Contrastes WCAG 1.4.11 | **Levée** | Recalculés : `--field-border` #767f94 = 4,01:1 (surface) / 3,74:1 (fond) ; sombre #7684a3 = 4,44 / 4,90 ; `--focus` #b45309 = 5,02 / 4,68 / 4,47 (surface atténuée) ; sombre #fbbf24 = 9,96 / 11,02. `FrontendContrastTest` lit les jetons réels du CSS. Captures focus, erreur et sombre fournies. |
+| 4 | Validation de la raison sociale et des champs texte | **Levée** | Non-UTF-8, `U+202E` + `\x01\x07`, CRLF (`Line1\r\nBcc: x`), `U+200B` → 422 « caractères non autorisés », aucun compte, aucun e-mail, aucune nouvelle erreur de tâche reportée ; saisie refusée réaffichée échappée et assainie (`&lt;b&gt;Bad?&lt;/b&gt;`) ; `Café   du   Coin` stockée en NFC avec espaces compactés (`C3A9`). `TextInput` appliqué aussi aux champs e-mail. |
+
+### Justifications de report
+
+Acceptées : R2 (purge des comptes non validés avec l'infrastructure cron de la phase 2 ; risque résiduel faible, la réinitialisation
+exige le contrôle de la boîte), R3 (sessions anonymes de formulaire bornées à 30 min ; `maxmemory` en phase 0), R4 (conforme au cahier
+des charges, formulaire POST en phase 5), R5 (ICU `MessageFormatter` avant la génération des 22 langues, phase 8 : **condition
+d'entrée de la phase 8**), R11/R12 (templates Hestia et API en phases 0 et 2), R14 (cosmétique), R17 (sitemap, phase 9).
+
+### Nouvelles recommandations non bloquantes
+
+18. **Règle contextuelle sensible aux accents** : `PasswordPolicy::contextTokens()` ne replie pas les diacritiques. Vérifié : pour le
+    compte « Société Générale & Fils », la réinitialisation accepte `Societe Generale 99`. Comparer après NFD + suppression des
+    marques combinantes (`\p{Mn}`), des deux côtés.
+19. **Répétition avec séparateurs** : `soleil soleil soleil` est accepté (le motif répété n'est cherché que sur la chaîne brute).
+    Appliquer aussi `isTrivial()` à la forme compacte (sans espaces ni ponctuation).
+20. **Liste de blocage** : des entrées brutes au format hashcat `$hex[…]` subsistent (ex. `$hex[687474703a2f2f616473]`) ; les décoder
+    ou les écarter à la régénération.
+21. **`CGIPassAuth On` dans `.htaccess`** exige `AllowOverride AuthConfig` (ou `All`) ; sinon Apache répond 500 sur tout le site.
+    À vérifier dans le template Hestia de la phase 0 avant la mise en ligne (déjà signalé par le contrôleur).
+22. **Refus de configuration en CLI** : `bin/migrate.php` n'affiche que « Erreur interne : consulter storage/logs » ; afficher la liste
+    des problèmes (qui ne contient aucun secret) sur STDERR pour l'opérateur.
+
+### Verdict du ré-audit
+
+Les quatre exigences bloquantes sont satisfaites et vérifiées par exécution, sans régression constatée (tests, parcours cURL, sondes
+d'attaque, captures). Les reports sont justifiés et datés. **Phase 1 APPROUVÉE.** Les recommandations 18 à 22 et les recommandations
+reportées sont à inscrire dans `tasks/todo.md` aux phases indiquées.
