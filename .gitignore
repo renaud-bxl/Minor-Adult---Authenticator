@@ -1,0 +1,7 @@
+/vendor/
+.env
+/storage/logs/*
+!/storage/logs/.gitkeep
+/biometrics/.venv/
+__pycache__/
+.phpunit.cache/
