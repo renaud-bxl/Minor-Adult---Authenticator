@@ -7,7 +7,7 @@ Légende : `[ ]` à faire · `[~]` en cours · `[x]` terminé (avec preuve) · `
 - [x] Plan de la phase 1 validé (protocole multi-agents, 2026-09-27).
 - [x] **Phase 1 APPROUVÉE par le critique** (168 tests verts ; `tasks/reviews/phase-1-*.md`).
 - [x] **Phase 2 APPROUVÉE par le critique** (263 tests + E2E 34/34 ; `tasks/reviews/phase-2-*.md`).
-- [~] Phase 3 en cours (document + visage, biométrie 100 % locale).
+- [~] Phase 3 implémentée par le créateur (document + visage, biométrie 100 % locale), en attente de contrôle et d'audit.
 
 ---
 
@@ -162,17 +162,37 @@ Dépendance ajoutée : `firebase/php-jwt` **7.2** (autorisée par CLAUDE.md ; la
 - [x] ~~Rotation de `CRYPTO_KEY`~~ (contrôleur) : trousseau versionné (`CRYPTO_KEY_VERSION`, `CRYPTO_PREVIOUS_KEYS`, contrôlés au démarrage), `bin/reencrypt.php` (idempotent). Procédure : `App\Services\KeyRotation`, cURL §14. Preuves : `CryptoTest` (2 tests), `OperationsTest::testCryptoKeyRotationRewritesEveryCiphertext`, `ConfigValidatorTest`.
 - [ ] Widget : sans accès à `/api/v1/i18n`, le bouton généré (`data-autoopen="false"`) reste sans libellé (aucune chaîne en dur par règle) ; libellé fourni par l'intégrateur via `data-trigger`.
 
-## Phase 3 : Document d'identité + visage (100 % local)
-- [ ] Capture JS (`getUserMedia`) du recto et du verso avec cadrage guidé et contrôle de netteté. Upload chiffré en mémoire vers PHP, relayé au microservice. Jamais écrit sur disque.
-- [ ] Microservice `biometrics/` (FastAPI, 127.0.0.1), modèles sous licence commerciale :
-  - MRZ : Tesseract (Apache-2.0) + modèle OCR-B/MRZ, ou PassportEye (MIT) ; TD1 (carte ID BE/UE, 3 lignes) et TD3 (passeport).
-  - Détection du visage : OpenCV Zoo **YuNet** (MIT). Comparaison : OpenCV Zoo **SFace** (Apache-2.0).
-  - Liveness : **MediaPipe Face Landmarker** (Apache-2.0) : défis aléatoires (tourner la tête gauche/droite, cligner des yeux), contrôle de cohérence temporelle, détection basique de rejeu d'écran.
-  - ⛔ InsightFace : ses modèles pré-entraînés sont réservés à un usage non commercial, on l'écarte. À documenter dans `docs/licences.md`.
-  - Réponse : `{ age, doc_expired, face_match_score, liveness_passed }`, jamais d'image ni d'identité.
-- [ ] PHP : contrôle des chiffres de la MRZ (7-3-1), calcul de l'âge exact et du document expiré, seuils configurables dans l'admin, échec ou revue manuelle selon le réglage du client.
-- [ ] Piste IA à étudier : estimation de l'âge par le visage, en signal complémentaire (modèle à licence commerciale à trouver). À valider avant de l'inclure.
-- [ ] Tests : MRZ (jeux ICAO), calcul d'âge (anniversaire le jour même, 29 février), jeux d'images de test.
+## Phase 3 : Document d'identité + visage (100 % local)  ← IMPLÉMENTÉE (créateur, 2026-09-27), en attente de contrôle et d'audit
+Preuves : `vendor/bin/phpunit` → OK (343 tests, 2 091 assertions ; unit 225, intégration 118, dont PHP → Python réel) ;
+`biometrics/.venv/bin/python -m pytest -q` → 96 passed ; `php tools/check_translations.php` → 100 % fr et en (361 clés) ;
+`python3 tools/e2e_capture.py` → 9/9 (Chromium réel) ; cURL dans `docs/api-tests.md` (section Phase 3) ; captures `docs/screenshots/phase-3/` (19).
+Aucune dépendance Composer ajoutée. Dépendances Python : `biometrics/requirements*.txt` (versions et sommes SHA-256, licences dans `docs/licences.md`).
+
+### 3.1 Microservice `biometrics/` (Python 3.11, FastAPI + Uvicorn)
+- [x] 127.0.0.1 seulement (refus de démarrer sinon), `/docs` désactivé, HMAC mutuel (requête : horodatage ±30 s + nonce unique ; réponse signée et liée au nonce). Preuves : `test_security.py`, `test_api.py`, cURL §1 (401, 404, interface externe refusée).
+- [x] Modèles téléchargés une fois par `scripts/fetch_models.sh` (URL figées, SHA-256 imposé, rejet prouvé) : YuNet (MIT), SFace (Apache-2.0), MediaPipe Face Landmarker (Apache-2.0), `mrz.traineddata` OCR-B (BSD-3). InsightFace exclu. `docs/licences.md`.
+- [x] venv `biometrics/.venv` (ignoré), `pip install --require-hashes` prouvé dans un venv neuf ; MediaPipe en `--no-deps` (conflit opencv-contrib, documenté).
+- [x] Images en mémoire : base64 strict, JPEG/PNG par signature, dimensions lues dans l'en-tête avant décodage, plafond OpenCV ; Tesseract par stdin/stdout (aucun fichier : test strace). Réponse = 6 champs, erreurs = codes stables, journaux sans donnée (test).
+- [x] MRZ : localisation (morphologie), redressement, 3 binarisations, 180°, TD1/TD2/TD3, 7-3-1 + composite, correction des confusions guidée par les chiffres de contrôle, dates inconnues prudentes. Preuves : 19 vecteurs partagés PHP/Python, OCR sur cartes et passeport synthétiques (inclinés, flous, retournés, chiffre falsifié refusé).
+- [x] Visage : YuNet + SFace, plus grand visage (image fantôme belge ignorée). Même personne 0,97 / autre personne < 0,1 sur images de test.
+- [x] Liveness : défis tirés côté serveur (ordre aléatoire gauche/droite/cligner), fenêtre par défi, ordre, aucun mouvement contraire, durée minimale, même visage (SFace), un seul visage ; lacet nez/joues (une photo plane pivotée échoue : test), EAR pour les paupières ; moiré (modeste, limites documentées).
+### 3.2 PHP
+- [x] `LocalBiometricsProvider` (via `VerificationMethodInterface`, sans refonte), `BiometricsClient` + transport cURL (boucle locale, sans proxy, délais), réponse hors contrat rejetée en bloc. `MockProvider` inchangé en sandbox.
+- [x] Seuils dans `.env` (acceptation 0,40, revue 0,30, liveness), validés au démarrage en production (`ConfigValidator`). Sous le seuil : échec ou revue manuelle selon le projet (`set-below-threshold`) ; file `manual_reviews` sans image, décision `bin/review.php`, webhook à la décision, expiration par cron.
+- [x] `Mrz` + `AgeCalculator` PHP (anniversaire le jour même, 29 février → 1er mars), mêmes vecteurs que Python ; document expiré refusé.
+- [x] Envoi : chiffré AES-256-GCM dans le navigateur (clé par capture, AAD), défi à usage unique, délai minimal serveur, horodatages cohérents, tirages bornés (3), tailles/types bornés, jamais écrit par l'application ; `cron/purge_tmp.php` toutes les 15 min (reco R18).
+### 3.3 Front
+- [x] `capture.js` (vanilla) : recto/verso (ou page passeport), cadre, netteté/luminosité, aperçu et reprise ; fichier en secours pour les documents seulement ; selfie en direct avec consignes et annonces ARIA ; consentement art. 9 dédié ; FR + EN ; bandeau sandbox exact (analyse réelle).
+### 3.4 Reports
+- [x] N1 (`/confirm` d'une session close → page de la session), N2 (`last_session` dans `not_verified`). Preuves : `DocumentCaptureTest`, cURL §3.
+### 3.5 Déploiement
+- [x] `deploy/systemd/veriage-biometrics.service` (utilisateur dédié, ProtectSystem=strict, PrivateTmp, NoNewPrivileges, sans capacités, sans réseau sortant, LimitCORE=0) ; procédure README (venv dédié, pool PHP-FPM, retour arrière).
+### Limites connues (phase 3)
+- [ ] ⚖️ Seuils à calibrer sur données réelles (taux d'erreur, biais) ; données d'entraînement des modèles ; revue humaine sans image = revue sur scores seulement (`docs/rgpd.md`).
+- [ ] Contradiction du cahier : « chiffres de contrôle aussi en PHP » vs réponse sans date de naissance. Choix : la MRZ ne sort jamais du service ; la classe PHP `Mrz` n'est exercée que par les tests de parité (AgeCalculator resservira en phase 4). À arbitrer.
+- [ ] Liveness basique : ne résiste pas à une caméra virtuelle pilotée (l'E2E le démontre), pas de certification ISO 30107-3 ; moiré calibré sur images synthétiques seulement.
+- [ ] Analyse synchrone (≈ 3 s) dans la requête PHP ; file + worker si charge (phase 10). Nonces anti-rejeu en mémoire : un seul processus Uvicorn.
+- [ ] Piste « estimation de l'âge par le visage » : non traitée (aucun modèle à licence commerciale validé).
 
 ## Phase 4 : eID belge (lecteur de carte + PIN)
 - [ ] Vhost `eid.` avec certificat client (voir phase 0), OCSP, chaîne de certificats vérifiée en PHP.
