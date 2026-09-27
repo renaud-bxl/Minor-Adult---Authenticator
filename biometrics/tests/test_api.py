@@ -41,25 +41,10 @@ def client(services):
 
 @pytest.fixture(scope="module")
 def payload(services, assets):
-    """Carte fictive (recto : portrait, verso : MRZ TD1) + séquence conforme au défi."""
-    import mediapipe as mp
-    import numpy as np
-    face = synth.load_asset("astronaut.png")
-    base = synth.selfie_frame(face)
-    res = services.landmarker._landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(base[:, :, ::-1])))
-    h, w = base.shape[:2]
-    points = np.array([[p.x * w, p.y * h] for p in res.face_landmarks[0]])
-    box = tuple(int(v) for v in services.faces.detect(base)[0].box)
-    challenge = ["turn_left", "blink", "turn_right"]
-    frames = synth.selfie_sequence(base, challenge, points, box)
-    lines = synth.td1("AB1234567", eighteen_tomorrow(), dt.date(2031, 5, 20), surname="SPECIMEN", given="ANNA")
-    b64 = lambda data: base64.b64encode(data).decode()  # noqa: E731
-    return {
-        "reference_date": dt.date.today().isoformat(),
-        "document": {"front": b64(synth.jpeg(synth.scene(synth.card_front(face), angle=-3))),
-                     "back": b64(synth.jpeg(synth.scene(synth.card_back(lines), angle=4)))},
-        "selfie": {"challenge": challenge, "frames": [{"t": f["t"], "step": f["step"], "image": b64(f["jpeg"])} for f in frames]},
-    }
+    """Carte fictive cohérente (recto : portrait obama2 + champs imprimés ; verso : MRZ TD1) et séquence de
+    selfie d'une AUTRE photo de la même personne (obama), conforme aux 4 défis."""
+    front, back = synth.identity_card(synth.load_asset("obama2.jpg"), "AB1234567", eighteen_tomorrow(), dt.date(2031, 5, 20))
+    return synth.request(services, "id_card", front, back, synth.selfie_frame(synth.load_asset("obama.jpg")), dt.date.today())
 
 
 def eighteen_tomorrow() -> dt.date:
@@ -107,7 +92,7 @@ def test_limits_and_errors_never_echo_the_input(client):
     secret_value = "SPECIMEN<<ANNA"
     response, _ = post(client, {"reference_date": secret_value})
     assert response.status_code == 422 and secret_value not in response.text
-    response, _ = post(client, {"reference_date": dt.date.today().isoformat(), "document": {"front": "@@"}, "selfie": {"challenge": ["blink"], "frames": []}})
+    response, _ = post(client, {"reference_date": dt.date.today().isoformat(), "document": {"type": "passport", "front": "@@"}, "selfie": {"challenge": ["blink"], "frames": []}})
     assert response.json() == {"error": "image_invalid"}
     response, _ = post(client, {"reference_date": "2001-01-01", "document": {}, "selfie": {}})
     assert response.json() == {"error": "reference_date_invalid"}  # horloge de PHP incohérente
@@ -131,19 +116,20 @@ def test_full_analysis_returns_only_the_contract(client, payload, caplog):
 
 
 def test_wrong_challenge_order_and_other_face(client, payload, assets):
-    reordered = {**payload, "selfie": {**payload["selfie"], "challenge": ["turn_right", "blink", "turn_left"]}}
+    reordered = {**payload, "selfie": {**payload["selfie"], "challenge": ["turn_right", "blink", "open_mouth", "turn_left"]}}
     body = post(client, reordered)[0].json()
     assert body["liveness_passed"] is False and "liveness_challenge_failed" in body["reasons"]
-    other = synth.jpeg(synth.scene(synth.card_front(synth.load_asset("obama.jpg")), angle=2))
-    swapped = {**payload, "document": {**payload["document"], "front": base64.b64encode(other).decode()}}
+    # Carte cohérente d'une autre personne (biden) : liée, mais le visage ne correspond pas.
+    front, back = synth.identity_card(synth.load_asset("biden.jpg"), "AB1234567", eighteen_tomorrow(), dt.date(2031, 5, 20))
+    swapped = {**payload, "document": {"type": "id_card", "front": base64.b64encode(synth.jpeg(front)).decode(),
+                                       "back": base64.b64encode(synth.jpeg(back)).decode()}}
     body = post(client, swapped)[0].json()
-    assert body["face_match_score"] < 0.363 and body["liveness_passed"] is True
+    assert body["reasons"] == [] and body["face_match_score"] < 0.363 and body["liveness_passed"] is True
 
 
 def test_expired_document_and_passport_without_back(client, payload, assets):
-    lines = synth.td3("L898902C3", dt.date(1990, 1, 1), dt.date(2020, 1, 1))
-    page = synth.jpeg(synth.scene(synth.passport_page(lines, synth.load_asset("astronaut.png")), angle=2, fill=0.85))
-    passport = {**payload, "document": {"front": base64.b64encode(page).decode()}}
+    page = synth.jpeg(synth.passport(synth.load_asset("obama2.jpg"), "L898902C3", dt.date(1990, 1, 1), dt.date(2020, 1, 1)))
+    passport = {**payload, "document": {"type": "passport", "front": base64.b64encode(page).decode(), "back": None}}
     body = post(client, passport)[0].json()
     assert body["mrz_valid"] is True and body["doc_expired"] is True and "document_expired" in body["reasons"]
     assert body["face_match_score"] > 0.6  # portrait lu sur la page du passeport

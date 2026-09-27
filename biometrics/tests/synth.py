@@ -345,3 +345,48 @@ def selfie_sequence(base: np.ndarray, challenge: list[str], landmarks: np.ndarra
 # Contours des yeux (indices MediaPipe Face Mesh).
 LEFT_EYE_RING = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
 RIGHT_EYE_RING = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
+
+
+# -- Demandes complètes (tests, attaques de non-régression, outils) ------------------------------------
+
+CHALLENGE = ["turn_left", "open_mouth", "blink", "turn_right"]
+
+
+def landmarks_of(landmarker, image: np.ndarray) -> np.ndarray:
+    import mediapipe as mp
+    res = landmarker._landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(image[:, :, ::-1])))
+    h, w = image.shape[:2]
+    return np.array([[p.x * w, p.y * h] for p in res.face_landmarks[0]], dtype=np.float32)
+
+
+def frames_payload(landmarker, faces, selfie: np.ndarray, challenge: list[str], **kwargs) -> list[dict]:
+    import base64
+    box = tuple(int(v) for v in faces.detect(selfie)[0].box)
+    frames = selfie_sequence(selfie, challenge, landmarks_of(landmarker, selfie), box, **kwargs)
+    return [{"t": f["t"], "step": f["step"], "image": base64.b64encode(f["jpeg"]).decode()} for f in frames]
+
+
+def request(services, kind: str, front: Image.Image, back: Image.Image | None, selfie: np.ndarray,
+            reference: dt.date, challenge: list[str] | None = None) -> dict:
+    """Corps de POST /v1/analyze à partir d'images (documents photographiés, selfie de départ)."""
+    import base64
+    challenge = challenge or CHALLENGE
+    b64 = lambda im: base64.b64encode(jpeg(im)).decode()  # noqa: E731
+    return {
+        "reference_date": reference.isoformat(),
+        "document": {"type": kind, "front": b64(front), "back": b64(back) if back is not None else None},
+        "selfie": {"challenge": challenge, "frames": frames_payload(services.landmarker, services.faces, selfie, challenge)},
+    }
+
+
+def identity_card(face: Image.Image, number: str, birth: dt.date, expiry: dt.date, style: str = "dots",
+                  angle: float = -3.0, **scene_kwargs) -> tuple[Image.Image, Image.Image]:
+    """Recto et verso photographiés d'une carte fictive cohérente (mêmes champs imprimés et MRZ)."""
+    front = scene(card_front(face, number, birth, expiry, style), angle=angle, **scene_kwargs)
+    back = scene(card_back(td1(number, birth, expiry)), angle=-angle / 2 + 1)
+    return front, back
+
+
+def passport(face: Image.Image, number: str, birth: dt.date, expiry: dt.date, angle: float = -2.0) -> Image.Image:
+    page = passport_page(td3(number, birth, expiry), face, number=number, birth=birth, expiry=expiry)
+    return scene(page, angle=angle, fill=0.85)
