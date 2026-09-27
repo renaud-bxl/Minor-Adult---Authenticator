@@ -18,6 +18,13 @@ Cahier des charges complet : section de chaque phase dans `tasks/todo.md`.
   Adaptateurs : `MockProvider` (dev/tests) et `LocalBiometricsProvider` (microservice Python local).
 - VPS : **Debian 12 (Bookworm) + HestiaCP**.
 
+## Positionnement de l'assurance (décision de Renaud, 2026-09-27)
+- Méthode document + visage = assurance **faible à modérée, non certifiée**, annoncée honnêtement aux clients
+  (arrête le mineur opportuniste, pas le mineur technique : caméra virtuelle, face-swap).
+- **eID belge = méthode « forte »** mise en avant (puce + PIN) ; itsme / portefeuille européen ensuite.
+- Chaque client choisit les méthodes acceptées (ex. un casino : eID seule).
+- **Aucune image conservée** (pas de revue manuelle sur images en V1) ; toute évolution exige un avis juridique ⚖️.
+
 ## Stack (non négociable)
 - PHP 8.2+ (MVC léger maison, aucun framework), PDO + requêtes préparées uniquement.
 - MariaDB (celle de HestiaCP), Redis (files, sessions, rate limiting) via `predis/predis`.
