@@ -460,3 +460,53 @@ Configuration de production invalide :
 Erreur interne : consulter storage/logs.
 ```
 (avec le `.env` de développement : refus de démarrer, liste sur STDERR, recommandation 22 du ré-audit.)
+
+### 14. Ajouts du contrôleur (2026-09-27)
+
+**Idempotence de `POST /api/v1/sessions`** (en-tête `Idempotency-Key`, 24 h, par projet et par mode) :
+
+```bash
+for i in 1 2; do curl -s -D - -o r$i.json -X POST $V/api/v1/sessions -H "Authorization: Bearer $KEY" \
+  -H 'Content-Type: application/json' -H 'Idempotency-Key: order-42' \
+  -d '{"email":"idem@example.com","min_age":18}' | grep -iE '^HTTP|^idempotent'; done; cmp r1.json r2.json && echo "corps identiques"
+curl -s -X POST $V/api/v1/sessions -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: order-42' -d '{"email":"other@example.com"}' -w ' HTTP %{http_code}\n'
+```
+
+```
+HTTP/1.1 201 Created
+HTTP/1.1 201 Created
+Idempotent-Replayed: true
+corps identiques
+{"error":{"code":"idempotency_key_reused","message":"This idempotency key was already used for a different request. Use a new key."}} HTTP 422
+```
+Une erreur n'est pas mémorisée (la clé peut être réessayée) ; requête d'origine en cours : `409 idempotency_in_progress`
+(`Retry-After: 1`) ; session effacée entre-temps : traitée comme une nouvelle requête (`SessionApiTest::testIdempotencyKeyReplaysTheSameSession`).
+
+**Rotation du secret de signature avec recouvrement** (l'ancien secret signe encore les webhooks : deux `v1`) :
+
+```bash
+php bin/project.php rotate-secret --project=prj_… --mode=live --grace-hours=24   # 0 : révocation immédiate (secret compromis)
+```
+
+```
+Nouveau secret de signature : whsec_…
+L'ancien secret signe encore les webhooks pendant 24 h (deux signatures v1) ; le jeton de retour est signé avec le nouveau.
+```
+`--grace-hours=500` → `Erreur : Période de recouvrement invalide (0 à 168 heures).` (code retour 1).
+
+**Rotation de `CRYPTO_KEY`** (trousseau versionné, octet de version de chaque chiffré) :
+1. `.env` : nouvelle clé dans `CRYPTO_KEY`, `CRYPTO_KEY_VERSION=2`, ancienne clé dans `CRYPTO_PREVIOUS_KEYS=1:base64:…` ; redémarrer PHP-FPM et les workers ;
+2. `php bin/reencrypt.php` (idempotent) : projets (secrets courants et en recouvrement), vérifications, sessions, livraisons de webhooks ;
+3. file d'e-mails Redis vidée (travaux différés de quelques minutes au plus), puis retrait de l'ancienne clé de `CRYPTO_PREVIOUS_KEYS`.
+
+```
+projects.signing_secret_test_enc        0
+projects.previous_secret_test_enc       0
+projects.signing_secret_live_enc        0
+projects.previous_secret_live_enc       0
+verifications.email_enc                 0
+verification_sessions.email_enc         0
+webhook_deliveries.payload_enc          0
+```
+(sans rotation en cours : rien à réécrire ; `OperationsTest::testCryptoKeyRotationRewritesEveryCiphertext` couvre une rotation réelle.)

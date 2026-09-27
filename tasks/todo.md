@@ -6,7 +6,7 @@ Légende : `[ ]` à faire · `[~]` en cours · `[x]` terminé (avec preuve) · `
 - [x] Section 0 : lessons.md, todo.md, CLAUDE.md créés. Questions bloquantes posées et tranchées (voir CLAUDE.md).
 - [x] Plan de la phase 1 validé (protocole multi-agents, 2026-09-27).
 - [x] **Phase 1 APPROUVÉE par le critique** (168 tests verts ; `tasks/reviews/phase-1-*.md`).
-- [~] Phase 2 IMPLÉMENTÉE (créateur, 2026-09-27), en attente de contrôle et d'audit (fiches de rôle dans `tasks/agents/`).
+- [~] Phase 2 IMPLÉMENTÉE (créateur) et CONTRÔLÉE (contrôleur, 2026-09-27, `tasks/reviews/phase-2-controle.md`), en attente d'audit critique.
 
 ---
 
@@ -100,7 +100,7 @@ Preuves : `vendor/bin/phpunit` → OK (après corrections de l'audit : 168 tests
 ---
 
 ## Phase 2 : API et module  ← IMPLÉMENTÉE (créateur, 2026-09-27), en attente de contrôle et d'audit
-Preuves : `vendor/bin/phpunit` → OK (240 tests, 1 395 assertions ; unit 153, intégration 87) ; `php tools/check_translations.php` → 100 % fr et en (263 clés, 0 inconnue) ;
+Preuves : `vendor/bin/phpunit` → OK (après contrôle : 250 tests, 1 491 assertions ; unit 156, intégration 94) ; `php tools/check_translations.php` → 100 % fr et en (265 clés, 0 inconnue) ;
 `python3 tools/e2e_demo.py` → 20/20 contrôles (Chromium réel, 4 modes du widget) ; cURL dans `docs/api-tests.md` (section Phase 2) ; captures dans `docs/screenshots/phase-2/` (29 fichiers).
 Dépendance ajoutée : `firebase/php-jwt` **7.2** (autorisée par CLAUDE.md ; la 6.x est visée par l'avis CVE-2025-45769, `composer audit` : aucun avis).
 
@@ -120,15 +120,15 @@ Dépendance ajoutée : `firebase/php-jwt` **7.2** (autorisée par CLAUDE.md ; la
 
 ### 2.3 Règles métier
 - [x] Réutilisation même client (non expirée, âge couvert : « majeur à 18 » ne vaut pas pour 21) → 200 immédiat, non facturé. Preuve : `testReuseForTheSameClientIsImmediateAndRespectsTheAge`, E2E scénario 5.
-- [x] Réutilisation entre clients : seulement si l'utilisateur l'a autorisée lors de sa vérification (case facultative, décochée) ET l'accepte explicitement sur le nouveau site, APRÈS contrôle de son adresse, et si le projet l'admet (`accept_shared`) ; jamais entre sandbox et production ; la copie n'est pas une source. Preuve : `HostedPageTest::testCrossClientReuseRequiresBothConsents`.
-- [x] Contrôle de l'adresse : code à 6 chiffres (HMAC stocké, 10 min, 5 essais par session puis échec, 3 envois espacés de 60 s ; e-mail en production, affiché sur la page en sandbox). Preuves : `testWrongCodesFailTheSessionAfterMaxAttempts`, `testCodeResendIsLimited`, `testLiveModeSendsTheCodeByEmailAndNeverShowsIt`.
+- [x] Réutilisation entre clients : seulement si l'utilisateur l'a autorisée lors de sa vérification (case facultative, décochée) ET l'accepte explicitement sur le nouveau site, APRÈS contrôle de son adresse, et si le projet l'admet (`accept_shared`) ; jamais entre sandbox et production ; en sandbox, entre projets d'un même compte seulement (contrôleur) ; la copie n'est pas une source. Preuves : `HostedPageTest::testCrossClientReuseRequiresBothConsents`, `testSandboxSharingStaysWithinTheAccount`.
+- [x] Contrôle de l'adresse : code à 6 chiffres (HMAC stocké, 10 min, 5 essais par session puis échec, 3 envois espacés de 60 s ; contrôleur : 10 codes erronés par adresse et par 24 h toutes sessions confondues, 60 saisies par IP et par heure ; e-mail en production, affiché sur la page en sandbox). Preuves : `testCodeGuessingIsCappedPerAddressAcrossSessions`, `testCodeEntryIsThrottledPerIp`, `testWrongCodesFailTheSessionAfterMaxAttempts`, `testCodeResendIsLimited`, `testLiveModeSendsTheCodeByEmailAndNeverShowsIt`.
 - [x] Blocage après 5 échecs par adresse (24 h glissantes, par projet et mode) → `429 email_locked`. Preuve : `testEmailIsLockedAfterRepeatedFailures`.
 - [x] Journal d'audit sans donnée d'identité (session, mode, méthode, résultat, motif, 4 derniers caractères de clé ; IP tronquée). Preuve : `testAuditLogHasNoIdentityData`.
 
 ### 2.4 Retour du résultat
 - [x] Redirection `return_url?session_id=&token=` : JWT HS256 (5 min, `aud` = projet, `sub` = session, secret de signature du projet et du mode, sans e-mail) émis au clic (`/s/{id}/return`). Preuves : `testReturnRedirectCarriesAShortSignedToken`, `TokensTest` (alg none/HS512, expiré, autre secret), E2E scénario 4.
 - [x] Webhooks `verification.completed` / `verification.failed` : `X-VeriAge-Signature: t=…,v1=…` (HMAC-SHA256 de `t.corps`), `X-VeriAge-Event-Id`, anti-rejeu ±300 s documenté, mis en file dans la transaction qui termine la session. Preuves : `WebhookSignatureTest`, `WebhookDeliveryTest`, cURL §11.
-- [x] Worker `bin/worker.php` (systemd `veriage-worker@`) : relances exponentielles (30 s × 2^(n−1) ±10 %, plafond 6 h, 10 tentatives), réservation atomique (plusieurs workers), idempotence par événement, réveil Redis. Preuves : `testFailuresAreRetriedWithExponentialBackoffThenAbandoned`, `testConcurrentWorkersNeverClaimTheSameDelivery`, E2E (webhooks reçus).
+- [x] Worker `bin/worker.php` (systemd `veriage-worker@`) : relances exponentielles (30 s × 2^(n−1) ±10 %, plafond 6 h, 10 tentatives), réservation atomique (plusieurs workers ; contrôleur : réservation prolongée sous un nouveau jeton avant chaque envoi, écritures conditionnées au jeton), idempotence par événement, réveil Redis. Preuves : `testFailuresAreRetriedWithExponentialBackoffThenAbandoned`, `testConcurrentWorkersNeverClaimTheSameDelivery`, `testAStaleWorkerNeitherSendsNorOverwritesADeliveryTakenOver`, E2E (webhooks reçus).
 - [x] SSRF (webhooks et return_url) : https seul, pas d'identifiants ni de fragment, domaines autorisés du projet (jokers `https://*.exemple`), aucune adresse privée/réservée/documentation/multicast (y compris IPv4 dans IPv6), résolution DNS vérifiée à CHAQUE envoi puis connexion épinglée sur l'IP contrôlée (anti DNS rebinding), aucune redirection, aucun proxy. Développement : `VERIFICATION_ALLOW_PRIVATE_NETWORK` (http vers adresses locales seulement), refusé en production. Preuves : `UrlGuardTest`, `testDnsRebindingToAPrivateAddressIsBlocked`, `testReturnUrlMustBelongToTheProjectDomains`, `ConfigValidatorTest`.
 
 ### 2.5 Méthodes, page hébergée, widget
@@ -147,9 +147,9 @@ Dépendance ajoutée : `firebase/php-jwt` **7.2** (autorisée par CLAUDE.md ; la
 - [ ] ⚖️ Textes d'information et de consentement (`module.consent.*`) et case de réutilisation entre sites : relecture juridique (base légale art. 9.2.a, durée de conservation, droits).
 - [ ] Aucune méthode réelle en production avant les phases 3 et 4 : une session `sk_live_` affiche « aucune méthode disponible ». La bascule `escalate` (eID en popup) est codée mais ne sera exercée qu'avec l'eID (phase 4).
 - [ ] `GET /api/v1/verifications?email=` (contrat du cahier des charges) : l'adresse passe dans l'URL → journaux d'accès du serveur à configurer sans chaîne de requête (phase 0).
-- [ ] Clé d'idempotence (`Idempotency-Key`) sur `POST /api/v1/sessions` : non implémentée (deux appels = deux sessions ; la réutilisation limite l'impact). À ajouter avec l'espace client si besoin.
-- [ ] Rotation d'un secret de signature : immédiate (pas de période de recouvrement avec deux signatures `v1`). Le vérificateur accepte déjà plusieurs `v1`.
-- [ ] Changer `CRYPTO_KEY` rend illisibles les données chiffrées (e-mails, secrets, file) : pas encore de rotation de clé versionnée (octet de version prêt dans `Crypto`).
+- [x] ~~Clé d'idempotence~~ (contrôleur) : en-tête `Idempotency-Key` sur `POST /api/v1/sessions` (24 h, par projet et mode, réponse rejouée + `Idempotent-Replayed`, 422 si autre corps, 409 si en cours, aucune adresse en Redis). Preuve : `SessionApiTest::testIdempotencyKeyReplaysTheSameSession`, cURL §14.
+- [x] ~~Rotation d'un secret sans recouvrement~~ (contrôleur) : `rotate-secret --grace-hours=N` (24 h par défaut, 0 à 168) ; l'ancien secret signe encore les webhooks (deux `v1`), migration 0013. Le jeton de retour (JWT) est signé avec le nouveau seul : le client essaie ses deux secrets pendant le recouvrement. Preuve : `WebhookDeliveryTest::testSecretRotationWithOverlapSignsWithBothSecrets`.
+- [x] ~~Rotation de `CRYPTO_KEY`~~ (contrôleur) : trousseau versionné (`CRYPTO_KEY_VERSION`, `CRYPTO_PREVIOUS_KEYS`, contrôlés au démarrage), `bin/reencrypt.php` (idempotent). Procédure : `App\Services\KeyRotation`, cURL §14. Preuves : `CryptoTest` (2 tests), `OperationsTest::testCryptoKeyRotationRewritesEveryCiphertext`, `ConfigValidatorTest`.
 - [ ] Widget : sans accès à `/api/v1/i18n`, le bouton généré (`data-autoopen="false"`) reste sans libellé (aucune chaîne en dur par règle) ; libellé fourni par l'intégrateur via `data-trigger`.
 
 ## Phase 3 : Document d'identité + visage (100 % local)
