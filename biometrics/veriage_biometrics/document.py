@@ -3,7 +3,7 @@ rien de ce qui est lu ici ne sort (seuls des codes de motif).
 
 1. Détection du document sur la face qui porte le portrait : quadrilatère au format attendu (carte ID-1 :
    85,6 × 54 mm, rapport 1,586 ; page de données d'un passeport TD3 : 125 × 88 mm, rapport 1,42 ; ± 15 %),
-   puis redressement (perspective). Repli : l'image entière si elle a elle-même ce format (scan recadré).
+   puis redressement (perspective). Repli : l'image entière si elle a elle-même ce format à ± 4 % (scan recadré).
 2. Portrait À L'INTÉRIEUR du document, à la position attendue : moitié gauche, taille plausible, et, pour un
    passeport, au-dessus de la MRZ. Un selfie envoyé à la place du recto est refusé (attaque A).
 3. Cohérence entre les champs imprimés de cette face (zone VIZ) et la MRZ : voir `viz_consistency`.
@@ -37,6 +37,8 @@ from .faces import Face, FaceEngine
 
 RATIOS = {"id_card": 85.6 / 53.98, "passport": 125.0 / 88.0}
 RATIO_TOLERANCE = 0.15
+# Image entière prise pour le document (scan recadré) : ni 4:3, ni 3:2, ni 16:9 (formats d'appareil photo).
+FALLBACK_TOLERANCE = 0.04
 CANONICAL_WIDTH = 1000
 
 MONTHS = {
@@ -67,11 +69,11 @@ def _order(points: np.ndarray) -> np.ndarray:
     return np.float32([points[np.argmin(s)], points[np.argmin(d)], points[np.argmax(s)], points[np.argmax(d)]])
 
 
-def _ratio_ok(width: float, height: float, kind: str) -> bool:
+def _ratio_ok(width: float, height: float, kind: str, tolerance: float = RATIO_TOLERANCE) -> bool:
     if min(width, height) < 1:
         return False
     ratio = max(width, height) / min(width, height)
-    return abs(ratio - RATIOS[kind]) <= RATIO_TOLERANCE * RATIOS[kind]
+    return abs(ratio - RATIOS[kind]) <= tolerance * RATIOS[kind]
 
 
 def _warp(image: np.ndarray, quad: np.ndarray, kind: str) -> np.ndarray:
@@ -117,7 +119,9 @@ def detect(image: np.ndarray, kind: str) -> Region | None:
             break
     if best is not None:
         return Region(_warp(image, best[1], kind), True)
-    if _ratio_ok(width, height, kind):
+    # Repli « scan recadré » : tolérance STRICTE. À ± 15 %, une image 16:9 (1,78) passait pour une carte
+    # (1,586) : un selfie avec deux dates écrites à droite suffisait (contrôle de la phase 3, attaque D).
+    if _ratio_ok(width, height, kind, FALLBACK_TOLERANCE):
         full = np.float32([[0, 0], [width, 0], [width, height], [0, height]])
         return Region(_warp(image, full, kind), False)
     return None

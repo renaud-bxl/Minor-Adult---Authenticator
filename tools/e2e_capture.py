@@ -85,7 +85,9 @@ def check(name, condition, detail=""):
 
 def shot(page, out, name, full_page=True):
     path = out / f"{name}.png"
-    page.screenshot(path=str(path), full_page=full_page)
+    # Aucun visage dans le dépôt, même du domaine public : flux caméra et aperçus du document masqués.
+    page.screenshot(path=str(path), full_page=full_page, mask_color="#5b6475",
+                    mask=[page.locator("video"), page.locator("[data-preview-img]")])
     print("  capture", path)
 
 

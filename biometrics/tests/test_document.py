@@ -154,3 +154,24 @@ def test_unreadable_front_fields_fail(services, assets):
     result = analyze(services, "id_card", front, back)
     assert result["face_match_score"] is None
     assert {"document_front_unreadable", "document_sides_mismatch"} & set(result["reasons"])
+
+
+def test_attack_d_selfie_frame_with_handwritten_dates_fails(services, assets):
+    """D (contrôle) : photo 16:9 du mineur, deux dates du parent écrites à droite, verso du parent. Avant
+    correction, le repli « image entière » (± 15 %) prenait le cadre 16:9 pour une carte : vérifié majeur."""
+    from PIL import ImageDraw, ImageFont
+    _, parent_back = synth.identity_card(synth.load_asset("biden.jpg"), **PARENT)
+    canvas = np.full((720, 1280, 3), 150, np.uint8)
+    canvas[120:600, 40:680] = synth.selfie_frame(synth.load_asset("obama2.jpg"))
+    front = synth.Image.fromarray(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))
+    draw, font = ImageDraw.Draw(front), ImageFont.load_default(size=40)
+    draw.text((760, 250), "05.05.1975", fill=(10, 10, 10), font=font)
+    draw.text((760, 350), "01.01.2030", fill=(10, 10, 10), font=font)
+    result = analyze(services, "id_card", front, parent_back)
+    assert result["face_match_score"] is None and "document_not_detected" in result["reasons"]
+
+
+@pytest.mark.parametrize("size", [(1280, 720), (1280, 960), (1200, 800)])
+def test_camera_frame_formats_are_never_taken_for_a_document(size):
+    blank = np.full((size[1], size[0], 3), 200, np.uint8)
+    assert document.detect(blank, "id_card") is None and document.detect(blank, "passport") is None
