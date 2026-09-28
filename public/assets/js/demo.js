@@ -61,7 +61,10 @@
             body: body ? JSON.stringify(body) : undefined,
             credentials: 'same-origin',
         }).then(function (response) {
-            return response.json();
+            // Une réponse non JSON (page d'erreur 419/500) est rejetée avec son code HTTP, pour le diagnostic.
+            return response.json().catch(function () {
+                throw new Error('HTTP ' + response.status);
+            });
         });
     }
 
@@ -129,8 +132,8 @@
                     poll(current.session);
                 }
             }
-        }).catch(function () {
-            show(logApi, label('error'));
+        }).catch(function (error) {
+            show(logApi, label('error') + (error && error.message ? ' (' + error.message + ')' : ''));
         });
     });
 

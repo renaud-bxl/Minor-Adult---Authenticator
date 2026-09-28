@@ -143,7 +143,7 @@ return [
     'demo.webhooks_hint' => 'Envoyés par le worker (php bin/worker.php) ; signature HMAC et fenêtre anti-rejeu de 5 minutes contrôlées.',
     'demo.none_yet' => 'Rien pour l’instant.',
     'demo.log_created' => 'Session créée.',
-    'demo.log_error' => 'Appel impossible : vérifiez que le serveur du module est démarré.',
+    'demo.log_error' => 'Appel impossible : le serveur de la boutique a renvoyé une erreur. Consultez storage/logs/ et le terminal de bin/demo-mac.sh.',
     'demo.waiting' => 'En attente de la confirmation…',
     'demo.confirmed' => 'Confirmé par le serveur.',
     'demo.return_title' => 'Retour sur la boutique',

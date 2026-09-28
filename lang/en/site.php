@@ -141,7 +141,7 @@ return [
     'demo.webhooks_hint' => 'Sent by the worker (php bin/worker.php); HMAC signature and 5-minute replay window checked.',
     'demo.none_yet' => 'Nothing yet.',
     'demo.log_created' => 'Session created.',
-    'demo.log_error' => 'Call failed: check that the module server is running.',
+    'demo.log_error' => 'Call failed: the shop server returned an error. Check storage/logs/ and the bin/demo-mac.sh terminal.',
     'demo.waiting' => 'Waiting for confirmation…',
     'demo.confirmed' => 'Confirmed by the server.',
     'demo.return_title' => 'Back to the shop',
