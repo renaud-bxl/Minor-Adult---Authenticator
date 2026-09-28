@@ -1,4 +1,7 @@
-VERDICT : REJETÉ
+VERDICT : APPROUVÉ
+
+(Ré-audit du 2026-09-28 sur `12e0c1b`, voir la section « Ré-audit » en fin de document. Premier audit du
+2026-09-27 : REJETÉ, exigences E1 à E3, conservé ci-dessous.)
 
 # Phase 3 : audit du critique
 
@@ -206,3 +209,166 @@ deux cartes. Elle n'arrête pas un mineur déterminé et un peu technique. C'est
 Mes deux passages de l'E2E ont créé 5 sessions (id 179 à 183), 1 vérification (83), 3 livraisons de webhook (104 à
 106), 23 lignes `audit_log` (590 à 612) et leurs clés Redis. **Tout a été supprimé.** Les sessions 175 à 178
 (23:12, antérieures à mon audit) n'ont pas été touchées. Images de test générées dans le scratchpad, hors du dépôt.
+
+---
+
+# Ré-audit (2026-09-28)
+
+Base : `git diff 34fdd94..12e0c1b` : corrections du créateur (`26872f8`) et contrôle des corrections
+(`12e0c1b`). Décisions de Renaud (CLAUDE.md) prises comme cadre, et non comme des défauts :
+- V1 annoncée avec une assurance **faible à modérée** ;
+- l'eID est la méthode forte ;
+- aucune image conservée ;
+- pas de revue manuelle.
+
+Méthode, conforme à la fiche mise à jour :
+- **base jetable** `veriage_crit` : copie de la base de dev **sans les lignes de `audit_log`** (table vide), puis
+  recréée vierge pour le test des migrations, et enfin supprimée en bloc ;
+- **Redis n° 13**, vidé à la fin ;
+- mon propre microservice (port 8766, code courant, secret neuf) et mon propre serveur PHP (port 8010), tous deux
+  arrêtés à la fin ;
+- **aucune ligne d'aucun journal d'audit touchée**, base de dev jamais écrite.
+
+## Résultats exacts
+
+| Vérification | Résultat |
+|---|---|
+| `vendor/bin/phpunit` | OK (333 tests, 2055 assertions) |
+| `biometrics/.venv/bin/python -m pytest -q` | 133 passed, 1 xfailed (limite C', documentée, `xfail(strict)`) |
+| `php tools/check_translations.php` | 100 % fr, en |
+| Migrations sur base **vierge** (0001 → 0020) | OK, puis `--status` : aucune en attente |
+| `tools/e2e_capture.py`, vrai Chromium, base jetable, service au code courant | **11/11** : attaques A et C refusées dans le navigateur, limite « photo animée injectée » acceptée et intitulée comme telle |
+| `bin/biometrics.php health` (PHP → mon service) | `ok`, tesseract, mediapipe |
+| SHA-256 de `eng.traineddata` | identique au script (`7d4322bd…`) |
+| `bin/project.php set-below-threshold --mode=review` | refusé, code de sortie 1, message explicite |
+| `bin/review.php approve` | refusé (aucune revue ; l'approbation est bloquée même pour une revue restée « pending », test du contrôleur) |
+
+## Attaques rejouées sur le vrai pipeline
+
+En mémoire, vrais modèles (YuNet, SFace, MediaPipe, Tesseract `mrz` + `eng`), `analysis.analyze`. « Mineur » :
+carte obama2, selfie obama (deux photos distinctes). « Parent » : carte biden, né le 05.05.1975.
+
+| # | Attaque | Moyens | Avant | Maintenant |
+|---|---|---|---|---|
+| A | Selfie nu au lieu du recto + verso du parent | aucun | vérifié majeur | **refusé** (`document_not_detected`, aucun score) |
+| B | Vraie carte du mineur + verso du parent | aucun | vérifié majeur | **refusé** (`document_sides_mismatch`, aucun score) |
+| T | Témoin : carte cohérente du parent + selfie du mineur | aucun | refusé | refusé (score 0,05) |
+| C | Carte du parent seule, portrait de la carte animé en 2D | script | vérifié majeur | **refusé** (`face_identical_to_document`, 0,927) |
+| C' | Idem, portrait **flouté** (σ = 2, 3 ou 4) avant l'animation | script + 1 ligne | – | **passe** (0,907 / 0,811 / 0,692) : limite documentée (« un simple flou ») |
+| D | Photo 16:9 du mineur + deux dates écrites (attaque du contrôleur) | aucun | vérifié majeur | **refusé** (`document_not_detected`) |
+| E1 | **« Carte maison »** : rectangle blanc au format ID-1, photo du mineur à gauche, **deux dates tapées** (naissance et expiration du parent), rien d'autre (ni titre, ni nom, ni numéro), photographié sur une table ; verso réel du parent | éditeur d'images + impression (ou écran) | – | **passe** (0,755) |
+| E2 | Même image envoyée **en fichier** (repli « image entière au format carte ») | éditeur d'images | – | **passe** (0,759) |
+| E3 | **Selfie recadré en 16:10** (1,60, dans la tolérance de ± 4 % du repli) + deux dates tapées ; verso du parent | éditeur de photos de téléphone | – | **passe** (0,739) |
+
+Lecture :
+- **E1 est satisfaite pour ce qu'elle visait** : aucun contournement **sans outil**. A, B et D sont fermés, avec une
+  règle générique (date de naissance ET numéro ou expiration) qui ne dépend pas d'un gabarit de pays. Le taux de
+  faux rejets mesuré (1,4 % sur un jeu synthétique, 36/36 pièces combinées refusées) est plausible. Il reste à
+  confirmer sur de vraies pièces, ce qui est déjà un prérequis de production dans `docs/rgpd.md`.
+- **Ce qui reste, et que j'ai vérifié :** le « document » détecté n'est qu'**un rectangle au format carte, avec un
+  visage à gauche et deux dates concordantes**. E3 est l'attaque D du contrôleur **plus un recadrage** : le correctif
+  du repli (± 4 %) ne tient donc que face à quelqu'un qui ne recadre pas. C'est la catégorie « recto fabriqué / faux
+  document cohérent », **annoncée** aux clients (`docs/integration.md` : « Un recto fabriqué (photo au format carte
+  avec les dates du parent) relève du faux document »). Elle ne se ferme vraiment qu'avec des gabarits de pièces
+  (R8), prévus en V1.1.
+- **Pourquoi je ne rejette pas pour E1–E3 :**
+  - le mécanisme demandé est en place et prouvé ;
+  - la limite est inhérente à une V1 sans gabarit ni contrôle des éléments de sécurité ;
+  - elle est dite aux clients, dans le cadre « faible à modéré » décidé par Renaud ;
+  - retirer le repli ne ferait que remplacer l'éditeur de photos par une impression ou un second écran (E1 passe
+    aussi).
+  - Voir néanmoins la recommandation **N1**.
+
+## Vérification des exigences
+
+- **E1 : SATISFAITE** (voir ci-dessus).
+  - `document.py` et `analysis.py` : le type de document vient de PHP ; pour une carte, la MRZ est lue au verso
+    seulement ; pour un passeport, la MRZ et le portrait sont sur la même page.
+  - Portrait à sa place, OCR de la zone VIZ (MRZ exclue de la zone lue).
+  - Liaison ratée → **aucun score** : le résultat ne peut pas être positif, en défense en profondeur.
+  - Type de document ↔ type de MRZ contrôlé.
+  - `document_unsupported` pour l'ancienne carte française.
+  - Motifs stables, contrat de six champs inchangé, rien de lu ne sort.
+  - Consentement FR/EN mis à jour (lecture des champs imprimés).
+- **E2 : SATISFAITE.**
+  - Encadré FR/EN « garantit / ne garantit pas » dans `docs/integration.md`, section AIPD de `docs/rgpd.md`,
+    README, en-tête de `liveness.py`, E2E.
+  - Le niveau « faible à modéré », l'absence de certification et l'absence de détection d'injection ou de deepfake
+    sont dits. La photo animée injectée est reconnue comme passant (l'E2E le montre et le contrôle comme tel).
+  - Le contrôle naïf du portrait recopié est annoncé comme tel. Le faux recto est annoncé.
+  - Honnêteté : bonne. Deux imprécisions, non bloquantes (N2).
+- **E3 : SATISFAITE.**
+  - `MANUAL_REVIEW_ENABLED = false` : sous le seuil, la vérification échoue toujours. Refus en ligne de commande
+    (vérifié), `ConfigValidator` n'accepte que `fail`.
+  - Migration 0020 (données seulement), vérifiée sur base vierge.
+  - L'approbation d'une ancienne revue « pending » est bloquée.
+  - `review` est retiré de l'API et des documents. La voie d'intervention humaine au sens de l'art. 22 est
+    indiquée (⚖️).
+
+## Régressions
+
+Aucune trouvée :
+- suites PHP et Python vertes ;
+- E2E complet vert (parcours légitime simulé, passeport, vidéo fixe, sans caméra) ;
+- traductions à 100 % ;
+- migrations vierges OK ;
+- défis élargis vérifiés dans le code (4 actions, 4 défis, jamais deux identiques de suite = 108 suites ; bouche
+  mesurée sur MediaPipe).
+
+## Grille (ré-audit)
+
+| # | Critère | État |
+|---|---|---|
+| 1 | Conformité | **OK** dans le cadre décidé par Renaud. Le cahier des charges demandait d'« empêcher l'usage d'une photo ou d'une vidéo » : ce n'est atteint que contre la photo fixe ou pivotée et contre la vidéo rejouée, pas contre une photo animée injectée. L'écart est assumé par décision du propriétaire et annoncé aux clients. |
+| 2 | Sécurité ASVS L2 | **OK**. Transport inchangé et sain. Logique métier : les contournements sans outil sont fermés, la limite résiduelle est documentée. |
+| 3 | RGPD | **OK**. Rien de lu ne sort ni n'est conservé ; consentement mis à jour ; plus de revue sans image ; art. 22 ⚖️ tracé. |
+| 4 | Qualité et architecture | **OK**. `document.py` est clair ; sa règle et ses tolérances sont justifiées en en-tête. |
+| 5 | Tests | **OK**. Non-régression A, B, C, D (pytest, PHP → vrai service, E2E) ; limite C' en `xfail(strict)` ; formats d'appareil photo testés. |
+| 6 | i18n | **OK** (100 %). |
+| 7 | UX et accessibilité | **OK**. Messages d'échec clairs (`document_inconsistent`, `document_unsupported`, qui oriente vers le passeport ou une autre méthode). Voir N4 pour les captures. |
+| 8 | Déploiement | **OK sur papier** : modèle `eng` ajouté avec somme SHA-256. Rien de nouveau côté serveur. |
+
+## Exigences bloquantes restantes
+
+Aucune.
+
+## Recommandations non bloquantes (ré-audit)
+
+1. **N1, repli « image entière » :** il accepte n'importe quelle image au format carte (± 4 %). Un selfie recadré en
+   16:10 avec deux dates tapées passe (E3), sans aucun objet physique. Deux options :
+   - retirer ce repli : exiger un quadrilatère détecté avec du fond autour, et demander de photographier la carte
+     posée sur une table ;
+   - ou, en repli seulement, exiger les trois champs (naissance, numéro, expiration) et un minimum de texte
+     imprimé.
+   Gain modeste, puisque E1 (carte maison imprimée) passe aussi, mais le repli redeviendrait plus strict que le
+   chemin principal (leçon du 2026-09-28). À faire avant la production, ou avec les gabarits de pièces (R8, V1.1),
+   qui sont la vraie parade.
+2. **N2, précision des textes :**
+   - `docs/integration.md` (FR/EN), « Elle vérifie : une pièce d'identité … détectée sur la photo » : écrire plutôt
+     « une forme au format d'une carte (ou d'une page de passeport), portrait à gauche », et préciser qu'**un recto
+     fabriqué en quelques minutes avec un éditeur d'images, accompagné du vrai verso d'un parent, passe**.
+     L'expression « faux document » suggère un effort de faussaire qui n'est pas nécessaire.
+   - Même précision dans la section AIPD de `docs/rgpd.md`.
+   - `liveness.py` et le contrôleur citent « σ = 3 » pour le flou qui contourne `face_identical_to_document` : **σ = 2
+     suffit** (mesuré : 0,907 < 0,92). Écrire « un léger flou ».
+3. **N3, message d'échec `document_inconsistent` :** il indique au fraudeur exactement quels champs recopier.
+   C'est acceptable pour l'UX d'un utilisateur légitime. À garder à l'esprit si l'on ajoute des gabarits : les
+   motifs fins doivent rester côté service.
+4. **N4, captures versionnées :** le masque couvre toute la zone vidéo, y compris la **bannière de consigne**
+   (`capture-fr-desktop-8-defi.png` ne montre plus le défi). Il faudrait masquer seulement les pixels du flux et de
+   l'aperçu, pas la surimpression de l'interface.
+5. **N5, suite des recommandations du premier audit :**
+   - R2 (cohérence 3D) ;
+   - R3 (anti-usurpation passif) ;
+   - R4 (calibrage des seuils, frères et sœurs) ;
+   - R5 (avertissement caméra virtuelle) ;
+   - R6 (ne jamais déployer `tools/`/`tests/`, dépôt privé : `tools/e2e_capture.py` + `synth.py` restent un kit de
+     contournement) ;
+   - R7 (analyseur de l'ancienne carte française) ;
+   - R8 (gabarits, qui fermeraient aussi N1) ;
+   - R9 et R10.
+   Tous sont tracés dans `phase-3-critique-suivi.md`, report accepté.
+6. **N6 :** les photos de test anciennes restent dans l'historique git (signalé par le contrôleur). Réécrire
+   l'historique relève d'une décision de Renaud. Sans urgence, puisque le dépôt est privé.
+
+Nombre de recommandations non bloquantes du ré-audit : 6.
