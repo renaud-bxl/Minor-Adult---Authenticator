@@ -53,7 +53,7 @@ Versions et sommes de toutes les roues : `biometrics/requirements*.txt` (install
 | Fichier | Contenu | Statut |
 |---|---|---|
 | `astronaut.png` | Eileen Collins, photo officielle de la NASA (distribuée par scikit-image) | Domaine public (œuvre du gouvernement fédéral américain) |
-| `obama.jpg`, `obama2.jpg`, `biden.jpg` | Portraits et photo officiels de la Maison-Blanche (distribués par le projet face_recognition) ; obama2 sert de portrait du document, obama de selfie (deux photos distinctes d'une même personne) | Domaine public (œuvres du gouvernement fédéral américain) |
+| `obama.jpg`, `obama2.jpg`, `biden.jpg` | Portraits officiels de la Maison-Blanche (obama, biden) et photo présentée comme officielle (obama2), distribués par le projet face_recognition ; obama2 sert de portrait du document, obama de selfie | Domaine public présumé (œuvres du gouvernement fédéral américain). ⚠ Le dépôt source (MIT pour le code) n'atteste pas la provenance de ses images d'exemple : usage limité aux tests internes, jamais versionnées ; aucune capture d'écran versionnée ne montre un visage (flux caméra et aperçus masqués par `tools/e2e_capture.py`). |
 
 Documents : uniquement **synthétiques**, générés par `biometrics/tests/synth.py` (État fictif « Utopie »,
 code `UTO` des spécimens ICAO 9303, mention « SPECIMEN – NOT A REAL DOCUMENT »), MRZ rendue avec la police

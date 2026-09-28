@@ -4,7 +4,8 @@ serveur PHP (tourner la tête à gauche, à droite, fermer les yeux, ouvrir la b
 
 NIVEAU D'ASSURANCE : FAIBLE À MODÉRÉ, sans certification (ISO/IEC 30107-3). Ce contrôle arrête une photo
 fixe ou pivotée, une vidéo rejouée qui ne suit pas les défis, un visage qui change en cours de séquence, et le
-portrait du document lui-même animé (voir analysis.py, « face_identical_to_document »). Il N'ARRÊTE PAS une
+portrait du document recopié TEL QUEL puis animé (voir analysis.py, « face_identical_to_document » ; un flou
+de σ = 3 px ou une recompression JPEG forte le fait passer sous 0,92 : contrôle naïf). Il N'ARRÊTE PAS une
 autre photo de la personne animée en 2D et injectée (caméra virtuelle, remplacement de getUserMedia), ni un
 échange de visage en temps réel (deepfake) : aucune détection d'injection ni de deepfake.
 

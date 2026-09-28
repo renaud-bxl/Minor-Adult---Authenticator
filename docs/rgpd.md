@@ -58,7 +58,7 @@
 ### Biométrie : niveau d'assurance (à reprendre dans l'AIPD)
 
 **Faible à modéré, sans certification.** La méthode arrête le mineur opportuniste (photo au lieu du recto,
-pièces combinées, photo fixe, vidéo rejouée, portrait du document animé). Elle n'arrête pas : une autre photo
+pièces combinées, photo fixe, vidéo rejouée, portrait du document recopié tel quel, contrôle naïf qu'un flou contourne). Elle n'arrête pas : une autre photo
 de la personne animée et injectée (caméra virtuelle), un échange de visage en temps réel (deepfake), un faux
 document cohérent (aucun contrôle des éléments de sécurité ni de la puce). Aucune détection d'injection ni de
 deepfake. Taux mesurés seulement sur un jeu synthétique (liaison des faces : 1,4 % de faux rejets, 100 % des

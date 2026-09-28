@@ -685,6 +685,11 @@ final class VerificationService
      */
     public function decideReview(int $reviewId, bool $approve): bool
     {
+        // Revue désactivée en V1 : une revue restée en attente (antérieure à la migration 0020) ne peut plus
+        // être approuvée ; seul le rejet reste possible, sinon elle expire avec sa session.
+        if ($approve && !Methods\LocalBiometricsProvider::MANUAL_REVIEW_ENABLED) {
+            return false;
+        }
         $review = $this->reviews?->find($reviewId);
         if ($review === null || $review['status'] !== 'pending') {
             return false;

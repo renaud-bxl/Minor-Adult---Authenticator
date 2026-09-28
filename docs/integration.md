@@ -88,7 +88,9 @@ Elle vérifie :
 
 Elle arrête notamment : une simple photo à la place du recto, deux pièces différentes combinées (la carte d'un
 mineur avec le verso de celle d'un parent), une photo fixe ou pivotée, une vidéo rejouée, le portrait du
-document animé.
+document recopié tel quel puis animé. Ce dernier contrôle est naïf : un simple flou ou une recompression du
+portrait suffit à le contourner (le cas rejoint alors « une autre photo animée », ci-dessous). Un recto
+fabriqué (photo au format carte avec les dates du parent) relève du faux document, ci-dessous.
 
 Elle **ne garantit pas** :
 - **aucune certification** ISO/IEC 30107-3 (détection d'attaque de présentation) ni ISO/IEC 19795 ;
@@ -402,7 +404,10 @@ It checks:
 - a liveness check with random challenges (turn your head, close your eyes, open your mouth; 108 sequences).
 
 It stops in particular: a plain photo instead of the front, two different documents combined (a minor's card
-with the back of a parent's), a still or rotated photo, a replayed video, the document portrait animated.
+with the back of a parent's), a still or rotated photo, a replayed video, the document portrait copied as is
+and animated. This last check is naive: a simple blur or recompression of the portrait defeats it (the case
+then becomes "another photo, animated", below). A fabricated front (a card-sized picture with the parent's
+dates) counts as a forged document, below.
 
 It **does not guarantee**:
 - **no certification** under ISO/IEC 30107-3 (presentation attack detection) or ISO/IEC 19795;

@@ -195,6 +195,7 @@ def analyze(payload: object, services: Services, today: dt.date | None = None) -
     liveness_passed = result.passed
     # Selfie quasi identique au portrait du document : c'est le portrait lui-même, animé (attaque C du
     # critique). Deux photos distinctes d'une même personne restent nettement en dessous (≈ 0,5 à 0,8).
+    # Contrôle NAÏF (mesuré) : un flou de σ = 3 px (0,89) ou un JPEG q20 (0,92) du portrait passe dessous.
     if face_match is not None and face_match >= params.identical_max:
         reasons.append("face_identical_to_document")
         liveness_passed = False

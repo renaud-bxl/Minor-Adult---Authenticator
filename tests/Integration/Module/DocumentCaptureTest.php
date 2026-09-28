@@ -284,6 +284,21 @@ final class DocumentCaptureTest extends ModuleTestCase
         self::assertArrayNotHasKey('review', $status);
     }
 
+    public function testAPendingReviewLeftBeforeMigration0020CannotBeApproved(): void
+    {
+        $p = $this->createProject();
+        $public = $this->sessionReady($p['keys']['test'], 'legacy@example.be');
+        $sessionId = (int) $this->value('SELECT id FROM verification_sessions WHERE public_id = ?', [$public]);
+        $sessions = new \App\Models\VerificationSessionRepository($this->app->db());
+        self::assertTrue($sessions->markReview($sessionId, 48, 'id_document_face'));
+        $reviewId = (new ManualReviewRepository($this->app->db()))->create($sessionId, $p['project']->id, false, 'id_document_face', 0.35, true, [], true);
+        $service = VerificationService::fromApplication($this->app);
+        self::assertFalse($service->decideReview($reviewId, true), 'approbation refusée : revue désactivée en V1');
+        self::assertSame('pending', $this->value('SELECT status FROM manual_reviews WHERE id = ?', [$reviewId]));
+        self::assertTrue($service->decideReview($reviewId, false), 'le rejet reste possible');
+        self::assertSame('failed', $this->value('SELECT status FROM verification_sessions WHERE id = ?', [$sessionId]));
+    }
+
     public function testInconsistentOrUnsupportedDocumentsFail(): void
     {
         $p = $this->createProject();
