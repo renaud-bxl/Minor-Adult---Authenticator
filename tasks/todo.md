@@ -7,7 +7,8 @@ Légende : `[ ]` à faire · `[~]` en cours · `[x]` terminé (avec preuve) · `
 - [x] Plan de la phase 1 validé (protocole multi-agents, 2026-09-27).
 - [x] **Phase 1 APPROUVÉE par le critique** (168 tests verts ; `tasks/reviews/phase-1-*.md`).
 - [x] **Phase 2 APPROUVÉE par le critique** (263 tests + E2E 34/34 ; `tasks/reviews/phase-2-*.md`).
-- [~] Phase 3 : REJETÉE par le critique (E1 à E3), corrigée par le créateur (`tasks/reviews/phase-3-critique-suivi.md`), en attente de contrôle et de ré-audit.
+- [x] **Phase 3 APPROUVÉE par le critique** (333 tests PHP, 133 pytest, E2E 11/11 ; `tasks/reviews/phase-3-*.md`). Assurance annoncée : faible à modérée.
+- [~] Phase 4 en cours (eID belge). Reports : N1 (repli plein cadre) et N2 de la phase 3.
 
 ---
 
