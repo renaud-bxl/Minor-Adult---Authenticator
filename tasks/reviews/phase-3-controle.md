@@ -163,3 +163,103 @@ d'attente avec interrogation, pour une latence identique. Deux points à surveil
 
 Leçons ajoutées à `tasks/lessons.md` : piles d'exception d'Uvicorn et budget de temps global ; une panne
 technique n'est pas une décision.
+
+---
+
+# Contrôle des corrections (E1, E2, E3), 2026-09-28
+
+Base : `git diff 34fdd94..26872f8` : corrections du créateur, sauvegardes WIP, `bin/demo-mac.sh`.
+Tests faits sur une base jetable (`veriage_ctl_e2e`, Redis n° 12), supprimée en bloc à la fin. Aucune
+ligne du journal d'audit n'a été touchée. Remarque : pendant ce contrôle, un autre processus a créé le
+commit `5353f1f` (« WIP … contrôle des corrections en cours ») avec une partie de mes corrections ; le
+reste est dans l'arbre de travail.
+
+## Verdict par exigence
+
+- **E1 : satisfaite après correction.**
+  - Ce qui marche : détection du document, portrait à sa place, concordance des champs imprimés avec la
+    MRZ (date de naissance ET, en plus, le numéro OU la date d'expiration), aucun score si le lien échoue,
+    type de document cohérent avec le type de MRZ, et un motif dédié pour les anciennes cartes françaises.
+  - **Faille trouvée (Élevée), `document.py:120` :** le repli « image entière » acceptait n'importe quelle
+    image au format carte à ± 15 %. Or une photo 16:9 (1,78) entre dans cette tolérance, comme la plupart
+    des cadres de webcam.
+    - **Attaque D, sans outil :** une photo du mineur en 16:9, deux dates du parent écrites à la main à
+      droite de la photo, et le verso de la carte du parent. Réponse du vrai pipeline :
+      `age 51, face_match 0.716, liveness true, reasons []`, donc **vérifié majeur**.
+  - **Correction :** tolérance du repli ramenée à ± 4 % (`FALLBACK_TOLERANCE`). Les formats 4:3, 3:2 et
+    16:9 sont désormais refusés comme document, alors qu'un scan recadré au format carte reste accepté.
+  - **Tests ajoutés :** `test_attack_d_selfie_frame_with_handwritten_dates_fails` et
+    `test_camera_frame_formats_are_never_taken_for_a_document` (3 formats d'appareil photo).
+  - **Mesure refaite :** 1,4 % de faux rejets (1/72) et 36/36 pièces combinées refusées, **inchangés**.
+  - **Robustesse sur des photos de téléphone** (scénes synthétiques plus dures que celles du créateur) :
+    fond blanc peu contrasté en 4:3 et en 16:9, perspective forte, rotation de 25°, carte qui remplit le
+    cadre et doigt sur un coin sont tous détectés et liés.
+    - Un **reflet sur les dates** donne `document_sides_mismatch` : c'est attendu, la personne recommence.
+    - Le taux de 1,4 % reste une mesure synthétique : police, impression et fond sont maîtrisés, sans
+      guilloché réel, hologramme ni flou de bougé. Le taux réel sera plus élevé. Le mesurer sur de vraies
+      pièces reste un prérequis de production, déjà écrit dans `docs/rgpd.md`.
+  - **Limite qui demeure, documentée :** un recto fabriqué (photo recadrée au format carte, avec la date
+    de naissance et l'expiration du parent) passe. Cela relève du « faux document cohérent », limite
+    déjà annoncée aux clients.
+- **Seuil `face_identical_to_document` à 0,92 :** mesuré sur le portrait recopié.
+  - Copie brute : 0,952 ; miroir : 0,952 ; gamma et teinte : 0,948.
+  - Flou de σ = 2 : 0,935 ; flou de σ = 3 : **0,889** ; JPEG qualité 20 : **0,918**.
+  - Deux vraies photos distinctes de la même personne : 0,769.
+  - Conclusion : il n'y a pas de faux rejet à craindre, mais un simple filtre contourne ce contrôle, qui
+    n'arrête que la copie naïve. Je n'ai pas changé le seuil : l'abaisser coûterait des faux rejets sans
+    fermer l'attaque. En revanche, les textes le disent maintenant (voir E2).
+- **E2 : satisfaite après correction.**
+  - Encadré FR/EN, `docs/rgpd.md`, README, `liveness.py`, en-tête et intitulés de l'E2E : exacts. Les
+    108 suites (4 × 3 × 3 × 3) sont vérifiées, ainsi que « date de naissance et numéro ou expiration ».
+  - Corrigé : « arrête le portrait du document animé » devient « le portrait **recopié tel quel** », avec
+    la mention que ce contrôle est naïf et qu'un flou le contourne. Ajout : un recto fabriqué relève du
+    faux document.
+  - Fichiers modifiés : `docs/integration.md` (FR et EN), `docs/rgpd.md`, `liveness.py`, commentaire
+    d'`analysis.py`.
+- **E3 : satisfaite, avec un trou bouché.**
+  - Déjà en place : `MANUAL_REVIEW_ENABLED = false` appliqué au fournisseur, au service, à `ProjectAdmin`
+    et en ligne de commande ; `ConfigValidator` n'accepte que `fail`.
+  - Migration 0020 : un simple `UPDATE`, sans modification de schéma, idempotente, jouée sur la base
+    jetable.
+  - Le champ `review` est retiré de l'API et des documents. La voie d'intervention humaine au sens de
+    l'art. 22 est indiquée.
+  - **Trou :** une revue restée « pending » avant la migration pouvait encore être **approuvée** par
+    `bin/review.php approve`.
+  - **Correction :** `decideReview()` refuse désormais toute approbation tant que la revue est
+    désactivée ; le rejet reste possible, sinon la revue expire avec sa session. Test
+    `testAPendingReviewLeftBeforeMigration0020CannotBeApproved`.
+
+## Photos de test « obama » et « obama2 »
+
+- **Téléchargement seulement :** aucune image `.jpg` n'est suivie par git. Les photos sont récupérées par
+  `fetch_test_assets.sh` depuis des URL figées sur un commit, avec contrôle SHA-256.
+- **Licence :** le code du dépôt source `face_recognition` est sous MIT, mais ce dépôt **n'atteste pas**
+  la provenance de ses images. « Photo officielle de Pete Souza » (obama2) est une affirmation non
+  vérifiée. J'ai corrigé `docs/licences.md` en conséquence : domaine public **présumé**, usage limité aux
+  tests internes.
+- **Problème trouvé :** les **19 captures versionnées** de `docs/screenshots/phase-3/` montraient le visage
+  de test, flux caméra compris.
+  - **Correction :** `tools/e2e_capture.py` masque désormais la `video` et les aperçus du document dans
+    chaque capture. Les 19 captures ont été régénérées ; j'en ai relu une, le visage n'y est plus.
+  - **Reste à faire :** ces images subsistent dans l'historique git. Il faudrait réécrire l'historique si
+    l'on veut l'exigence au sens strict (décision de Renaud). Je n'ai pas vérifié `docs/demo/`, dont je
+    ne devais pas toucher les fichiers.
+
+## `bin/demo-mac.sh`
+
+Relu sans modification, conformément à la consigne : l'orchestrateur y corrige un bug. À vérifier de son
+côté :
+- Il ajoute `APP_ENV=local`… à la fin d'un `.env` copié de `.env.example`, où ces clés existent déjà. Avec
+  phpdotenv en mode immuable, **c'est la première valeur qui l'emporte** : l'ajout risque d'être ignoré.
+- Le `trap` sur `${pids[@]}` avec `set -u` échoue sous le bash 3.2 de macOS si le tableau est vide. Le cas
+  est improbable : le tableau n'est rempli qu'après le `trap`.
+
+## Résultats exacts
+
+- `vendor/bin/phpunit` → **OK (333 tests, 2055 assertions)**.
+- `biometrics/.venv/bin/python -m pytest -q` → **133 passed, 1 xfailed** (limite connue C').
+- `php tools/check_translations.php` → **100 % fr, en**.
+- `tools/e2e_capture.py` (vrai Chromium, base jetable, service redémarré avec le code courant) → **11/11**.
+  Captures régénérées et masquées.
+- `scripts/measure_binding.py` → 1,4 % de faux rejets, 100 % des pièces combinées refusées.
+- Nettoyage : base `veriage_ctl_e2e` supprimée, Redis n° 12 vidé, serveur de test arrêté.
