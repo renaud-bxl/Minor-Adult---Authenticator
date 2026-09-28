@@ -56,7 +56,7 @@ done
 
 mkdir -p storage/logs
 pids=()
-trap 'kill "${pids[@]}" 2>/dev/null' EXIT INT TERM
+trap 'kill ${pids[@]+"${pids[@]}"} 2>/dev/null' EXIT INT TERM
 PHP_CLI_SERVER_WORKERS=4 php -S 127.0.0.1:8000 -t public public/index.php >storage/logs/demo-server-8000.log 2>&1 & pids+=($!)
 PHP_CLI_SERVER_WORKERS=4 php -S 127.0.0.1:8001 -t public public/index.php >storage/logs/demo-server-8001.log 2>&1 & pids+=($!)
 php bin/worker.php >storage/logs/demo-worker.log 2>&1 & pids+=($!)
