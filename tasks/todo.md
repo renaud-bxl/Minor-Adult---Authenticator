@@ -7,7 +7,7 @@ Légende : `[ ]` à faire · `[~]` en cours · `[x]` terminé (avec preuve) · `
 - [x] Plan de la phase 1 validé (protocole multi-agents, 2026-09-27).
 - [x] **Phase 1 APPROUVÉE par le critique** (168 tests verts ; `tasks/reviews/phase-1-*.md`).
 - [x] **Phase 2 APPROUVÉE par le critique** (263 tests + E2E 34/34 ; `tasks/reviews/phase-2-*.md`).
-- [~] Phase 3 implémentée (document + visage, biométrie 100 % locale) et contrôlée (`tasks/reviews/phase-3-controle.md`), en attente d'audit.
+- [~] Phase 3 : REJETÉE par le critique (E1 à E3), corrigée par le créateur (`tasks/reviews/phase-3-critique-suivi.md`), en attente de contrôle et de ré-audit.
 
 ---
 
@@ -162,10 +162,11 @@ Dépendance ajoutée : `firebase/php-jwt` **7.2** (autorisée par CLAUDE.md ; la
 - [x] ~~Rotation de `CRYPTO_KEY`~~ (contrôleur) : trousseau versionné (`CRYPTO_KEY_VERSION`, `CRYPTO_PREVIOUS_KEYS`, contrôlés au démarrage), `bin/reencrypt.php` (idempotent). Procédure : `App\Services\KeyRotation`, cURL §14. Preuves : `CryptoTest` (2 tests), `OperationsTest::testCryptoKeyRotationRewritesEveryCiphertext`, `ConfigValidatorTest`.
 - [ ] Widget : sans accès à `/api/v1/i18n`, le bouton généré (`data-autoopen="false"`) reste sans libellé (aucune chaîne en dur par règle) ; libellé fourni par l'intégrateur via `data-trigger`.
 
-## Phase 3 : Document d'identité + visage (100 % local)  ← IMPLÉMENTÉE (créateur) puis CONTRÔLÉE (contrôleur, 2026-09-27), en attente d'audit
-Preuves : `vendor/bin/phpunit` → OK (343 tests, 2 091 assertions ; unit 225, intégration 118, dont PHP → Python réel) ;
-`biometrics/.venv/bin/python -m pytest -q` → 96 passed ; `php tools/check_translations.php` → 100 % fr et en (361 clés) ;
-`python3 tools/e2e_capture.py` → 9/9 (Chromium réel) ; cURL dans `docs/api-tests.md` (section Phase 3) ; captures `docs/screenshots/phase-3/` (19).
+## Phase 3 : Document d'identité + visage (100 % local)  ← REJETÉE par le critique (E1 à E3) puis CORRIGÉE (créateur, 2026-09-28), en attente de contrôle et de ré-audit
+Preuves après corrections (suivi : `tasks/reviews/phase-3-critique-suivi.md`) : `vendor/bin/phpunit` → OK (332 tests, 2 048 assertions, dont PHP → Python réel) ;
+`biometrics/.venv/bin/python -m pytest -q` → 129 passed, 1 xfailed (limite connue) ; `php tools/check_translations.php` → 100 % fr et en ;
+`python3 tools/e2e_capture.py` → 11/11 (Chromium réel, base jetable) ; cURL dans `docs/api-tests.md` ; captures `docs/screenshots/phase-3/` (19).
+**Niveau d'assurance : faible à modéré, sans certification** (voir `docs/integration.md`).
 Aucune dépendance Composer ajoutée. Dépendances Python : `biometrics/requirements*.txt` (versions et sommes SHA-256, licences dans `docs/licences.md`).
 
 ### 3.1 Microservice `biometrics/` (Python 3.11, FastAPI + Uvicorn)
@@ -175,10 +176,11 @@ Aucune dépendance Composer ajoutée. Dépendances Python : `biometrics/requirem
 - [x] Images en mémoire : base64 strict, JPEG/PNG par signature, dimensions lues dans l'en-tête avant décodage, plafond OpenCV ; Tesseract par stdin/stdout (aucun fichier : test strace). Réponse = 6 champs, erreurs = codes stables, journaux sans donnée (test).
 - [x] MRZ : localisation (morphologie), redressement, 3 binarisations, 180°, TD1/TD2/TD3, 7-3-1 + composite, correction des confusions guidée par les chiffres de contrôle, dates inconnues prudentes. Preuves : 19 vecteurs partagés PHP/Python, OCR sur cartes et passeport synthétiques (inclinés, flous, retournés, chiffre falsifié refusé).
 - [x] Visage : YuNet + SFace, plus grand visage (image fantôme belge ignorée). Même personne 0,97 / autre personne < 0,1 sur images de test.
-- [x] Liveness : défis tirés côté serveur (ordre aléatoire gauche/droite/cligner), fenêtre par défi, ordre, aucun mouvement contraire, durée minimale, même visage (SFace), un seul visage ; lacet nez/joues (une photo plane pivotée échoue : test), EAR pour les paupières ; moiré (modeste, limites documentées).
+- [x] Liaison des faces (E1) : document détecté au format ID-1/TD3 sur la face du portrait, portrait à sa place, champs imprimés (date de naissance + numéro ou expiration) = MRZ, MRZ au verso (carte) ou sur la page du portrait (passeport), type choisi = type de MRZ ; ancienne carte française → `document_unsupported`. Attaques A et B refusées (pytest + PHP → Python) ; 1,4 % de faux rejets sur jeu synthétique.
+- [x] Liveness : 4 défis tirés côté serveur parmi 4 actions (tourner à gauche/droite, fermer les yeux, ouvrir la bouche), jamais deux identiques de suite (108 suites), fenêtre par défi, ordre, aucun mouvement contraire, durée minimale, même visage (SFace), un seul visage ; selfie identique au portrait du document refusé (attaque C). Résiste à une photo plane PIVOTÉE, **pas à une photo DÉFORMÉE (animée en 2D) et injectée** : l'E2E le démontre (limite connue). Moiré : modeste.
 ### 3.2 PHP
 - [x] `LocalBiometricsProvider` (via `VerificationMethodInterface`, sans refonte), `BiometricsClient` + transport cURL (boucle locale, sans proxy, délais), réponse hors contrat rejetée en bloc. `MockProvider` inchangé en sandbox.
-- [x] Seuils dans `.env` (acceptation 0,40, revue 0,30, liveness), validés au démarrage en production (`ConfigValidator`). Sous le seuil : échec ou revue manuelle selon le projet (`set-below-threshold`) ; file `manual_reviews` sans image, décision `bin/review.php`, webhook à la décision, expiration par cron.
+- [x] Seuils dans `.env` (acceptation ≥ 0,363, liveness), validés au démarrage en production (`ConfigValidator`). Sous le seuil : **échec** ; revue manuelle sans image **retirée de la V1** (E3 : code désactivé, `review` refusé en CLI et au démarrage, migration 0020).
 - [x] `AgeCalculator` PHP (anniversaire le jour même, 29 février → 1er mars), même règle que Python vérifiée sur les vecteurs MRZ ; document expiré refusé. (Classe PHP `Mrz` supprimée par le contrôleur : code mort, voir arbitrage ci-dessous.)
 - [x] Envoi : chiffré AES-256-GCM dans le navigateur (clé par capture, AAD), défi à usage unique, délai minimal serveur, horodatages cohérents, tirages bornés (3), tailles/types bornés, jamais écrit par l'application ; `cron/purge_tmp.php` toutes les 15 min (reco R18).
 ### 3.3 Front
@@ -188,9 +190,9 @@ Aucune dépendance Composer ajoutée. Dépendances Python : `biometrics/requirem
 ### 3.5 Déploiement
 - [x] `deploy/systemd/veriage-biometrics.service` (utilisateur dédié, ProtectSystem=strict, PrivateTmp, NoNewPrivileges, sans capacités, sans réseau sortant, LimitCORE=0) ; procédure README (venv dédié, pool PHP-FPM, retour arrière).
 ### Limites connues (phase 3)
-- [ ] ⚖️ Seuils à calibrer sur données réelles (taux d'erreur, biais) ; données d'entraînement des modèles ; revue humaine sans image = revue sur scores seulement (`docs/rgpd.md`).
+- [ ] ⚖️ Seuils à calibrer sur données réelles (taux d'erreur, biais, sosies) ; données d'entraînement des modèles ; revue humaine seulement avec conservation chiffrée des images (décision juridique) ; art. 22 : voie d'intervention humaine à valider.
 - [x] ~~Contradiction du cahier : « chiffres de contrôle aussi en PHP » vs réponse sans date de naissance.~~ Arbitré par l'orchestrateur : la MRZ ne sort jamais du microservice (minimisation). Le contrôleur a supprimé la classe PHP `Mrz` (jamais appelée hors de ses tests) ; `AgeCalculator` reste (eID, phase 4), sa règle est testée sur les vecteurs partagés.
-- [ ] Liveness basique : ne résiste pas à une caméra virtuelle pilotée (l'E2E le démontre), pas de certification ISO 30107-3 ; moiré calibré sur images synthétiques seulement.
+- [ ] Niveau d'assurance faible à modéré : aucune détection d'injection (caméra virtuelle) ni de deepfake, aucun contrôle des éléments de sécurité (faux document cohérent), pas de certification ISO 30107-3 ; cohérence 3D contre l'animation 2D (R2) non faite (pas de données réelles pour la calibrer).
 - [ ] Analyse synchrone (≈ 2,5 s mesurées) dans la requête PHP ; file + worker si charge (phase 10). Nonces anti-rejeu en mémoire : un seul processus Uvicorn. (Contrôleur : attente bornée à 10 s d'une place libre, budget OCR de 20 s, panne technique = session laissée ouverte ; voir `tasks/reviews/phase-3-controle.md`.)
 - [ ] Piste « estimation de l'âge par le visage » : non traitée (aucun modèle à licence commerciale validé).
 

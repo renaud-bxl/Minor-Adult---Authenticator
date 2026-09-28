@@ -20,9 +20,10 @@ return [
     // pour deux photos d'une même personne ; la photo d'un document (impression, hologrammes, âge de la
     // photo) abaisse le score. Valeurs de départ À CALIBRER sur des données réelles avant la production.
     'face_match_threshold' => (float) env('BIOMETRICS_FACE_MATCH_THRESHOLD', 0.40),
-    // Sous le seuil d'acceptation mais au-dessus de celui-ci : revue manuelle si le projet l'a choisie.
+    // Bande de revue manuelle (inutilisée en V1 : revue désactivée, voir ci-dessous).
     'face_review_threshold' => (float) env('BIOMETRICS_FACE_REVIEW_THRESHOLD', 0.30),
-    // Réglage par défaut des nouveaux projets sous le seuil : fail (échec) | review (revue manuelle).
+    // Sous le seuil d'acceptation : échec. « review » (revue manuelle) est DÉSACTIVÉ en V1 (audit phase 3, E3)
+    // et refusé au démarrage en production ; le seuil de revue ci-dessus reste pour une réactivation future.
     'below_threshold_default' => (string) env('BIOMETRICS_BELOW_THRESHOLD', 'fail'),
     // Délai de décision d'une revue (heures) ; au-delà, la session expire.
     'review_ttl_hours' => (int) env('BIOMETRICS_REVIEW_TTL_HOURS', 48),
@@ -34,19 +35,20 @@ return [
         'blink_ratio' => (float) env('BIOMETRICS_LIVENESS_BLINK_RATIO', 0.65),
         'same_face_min' => (float) env('BIOMETRICS_LIVENESS_SAME_FACE', 0.30),
         'min_frames' => 8,
-        'max_frames' => 60,
+        'max_frames' => 80,
         'min_step_ms' => 600,
         'replay_threshold' => (float) env('BIOMETRICS_LIVENESS_REPLAY', 30.0),
     ],
 
     // Défis tirés par le serveur et rythme de la capture (partagés avec le script de la page).
     'challenge' => [
-        'steps' => 3,
+        // 4 défis parmi 4 actions, jamais deux identiques de suite : 4 × 3 × 3 × 3 = 108 suites possibles.
+        'steps' => 4,
         // Validité d'un défi tiré (secondes) et tirages autorisés par session.
         'ttl' => 300,
         'max_attempts' => 3,
         // Fenêtre initiale (regarder la caméra), puis une fenêtre par défi, images toutes les 200 ms :
-        // 7 + 3 × 15 = 52 images (≤ max_frames). « Fermer les yeux une seconde » laisse ~5 images fermées.
+        // 7 + 4 × 15 = 67 images (≤ max_frames). « Fermer les yeux une seconde » laisse ~5 images fermées.
         'neutral_ms' => 1500,
         'step_ms' => 3000,
         'frame_interval_ms' => 200,
@@ -60,7 +62,7 @@ return [
         'doc_min_side' => 480,
         'frame_max_bytes' => 400 * 1024,
         'frame_max_side' => 1280,
-        'max_frames' => 60,
+        'max_frames' => 80,
     ],
 
     // Fichiers temporaires éventuels (corps de requête que PHP recopie au-delà de 16 Kio : chiffrés, voir

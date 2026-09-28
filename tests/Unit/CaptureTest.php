@@ -65,7 +65,8 @@ final class CaptureTest extends TestCase
         self::assertSame(250, $payload->spanMs());
         $request = $payload->toRequest(['blink'], '2026-09-27', ['yaw_threshold' => 0.3]);
         self::assertSame(['blink'], $request['selfie']['challenge']);
-        self::assertSame(['front', 'back'], array_keys($request['document']));
+        self::assertSame(['type', 'front', 'back'], array_keys($request['document']));
+        self::assertSame('id_card', $request['document']['type']);
         self::assertSame(['t', 'step', 'image'], array_keys($request['selfie']['frames'][0]));
     }
 

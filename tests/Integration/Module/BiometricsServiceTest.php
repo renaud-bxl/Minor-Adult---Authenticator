@@ -31,7 +31,7 @@ final class BiometricsServiceTest extends ModuleTestCase
     {
         $root = dirname(__DIR__, 3) . '/biometrics';
         foreach (['.venv/bin/python', 'models/face_detection_yunet_2023mar.onnx', 'models/face_recognition_sface_2021dec.onnx',
-            'models/face_landmarker.task', 'tests/assets/astronaut.png', 'tests/assets/obama.jpg'] as $required) {
+            'models/face_landmarker.task', 'models/tessdata/eng.traineddata', 'tests/assets/obama.jpg', 'tests/assets/obama2.jpg', 'tests/assets/biden.jpg'] as $required) {
             if (!is_file($root . '/' . $required)) {
                 self::$skip = $required . ' absent (voir README, « Biométrie locale »)';
 
@@ -163,10 +163,16 @@ final class BiometricsServiceTest extends ModuleTestCase
     {
         $p = $this->createProject();
         $key = $p['keys']['test'];
-        $mismatch = $this->verifyWithImages($key, 'other@example.be', ['--document-face', 'obama.jpg']);
+        $mismatch = $this->verifyWithImages($key, 'other@example.be', ['--document-face', 'biden.jpg']);
         self::assertStringContainsString('data-failure-reason="face_mismatch"', $mismatch);
         $expired = $this->verifyWithImages($key, 'expired@example.be', ['--passport', '--expiry', '2024-01-31']);
         self::assertStringContainsString('data-failure-reason="document_expired"', $expired);
+        // Attaques du critique (non-régression, E1) : A (selfie au lieu du recto) et B (recto du mineur, verso
+        // d'une carte d'adulte) sont refusées par le vrai service.
+        $attackA = $this->verifyWithImages($key, 'attack.a@example.be', ['--birth', '2011-06-02', '--front-selfie', '--back-of', 'UT1111111,1975-05-05,2030-01-01']);
+        self::assertStringContainsString('data-failure-reason="document_inconsistent"', $attackA);
+        $attackB = $this->verifyWithImages($key, 'attack.b@example.be', ['--birth', '2011-06-02', '--back-of', 'UT1111111,1975-05-05,2030-01-01']);
+        self::assertStringContainsString('data-failure-reason="document_inconsistent"', $attackB);
         $logs = implode("\n", TestApplication::logLines());
         self::assertStringNotContainsString('SPECIMEN', $logs);
         self::assertStringNotContainsString('UT1234567', $logs);

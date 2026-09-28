@@ -50,18 +50,22 @@ def write_y4m(path: Path, frames: list[np.ndarray], fps: int = 25) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True)
-    parser.add_argument("--challenge", default="turn_left,blink,turn_right")
+    parser.add_argument("--challenge", default="turn_left,open_mouth,blink,turn_right")
     parser.add_argument("--birth", default="2000-03-14")
     parser.add_argument("--expiry", default="2031-05-20")
-    parser.add_argument("--document-face", default="astronaut.png")
-    parser.add_argument("--selfie-face", default="astronaut.png")
+    parser.add_argument("--number", default="UT1234567")
+    parser.add_argument("--document-face", default="obama2.jpg")
+    parser.add_argument("--selfie-face", default="obama.jpg", help="AUTRE photo de la personne (un selfie identique au portrait est refusé)")
+    parser.add_argument("--back-of", help="attaque B : verso d'une AUTRE pièce, « numéro,naissance,expiration »")
+    parser.add_argument("--front-selfie", action="store_true", help="attaque A : un selfie envoyé à la place du recto")
     parser.add_argument("--passport", action="store_true")
     parser.add_argument("--step-ms", type=int, default=3000)
     parser.add_argument("--interval-ms", type=int, default=200)
     parser.add_argument("--neutral-frames", type=int, default=7)
     parser.add_argument("--y4m", help="vidéo d'un visage immobile pour la fausse caméra (E2E)")
     parser.add_argument("--card-video", help="vidéo du recto de la carte pour la fausse caméra (E2E)")
-    parser.add_argument("--camera-frames", help="dossier : poses du visage (neutre, rotations, yeux fermés) pour la caméra simulée de l'E2E")
+    parser.add_argument("--camera-frames", help="dossier : poses du visage (neutre, rotations, yeux fermés, bouche ouverte) pour la caméra simulée de l'E2E")
+    parser.add_argument("--doc-poses", help="dossier : mêmes poses, tirées du PORTRAIT DU DOCUMENT (attaque C, doit échouer)")
     args = parser.parse_args()
 
     out = Path(args.out)
@@ -69,11 +73,16 @@ def main() -> int:
     birth, expiry = dt.date.fromisoformat(args.birth), dt.date.fromisoformat(args.expiry)
     doc_face = synth.load_asset(args.document_face)
     if args.passport:
-        page = synth.passport_page(synth.td3("UT1234567", birth, expiry), doc_face)
-        (out / "front.jpg").write_bytes(synth.jpeg(synth.scene(page, angle=-2, fill=0.85)))
+        (out / "front.jpg").write_bytes(synth.jpeg(synth.passport(doc_face, args.number, birth, expiry)))
     else:
-        (out / "front.jpg").write_bytes(synth.jpeg(synth.scene(synth.card_front(doc_face), angle=-3)))
-        (out / "back.jpg").write_bytes(synth.jpeg(synth.scene(synth.card_back(synth.td1("UT1234567", birth, expiry)), angle=3)))
+        front, back = synth.identity_card(doc_face, args.number, birth, expiry)
+        if args.back_of:
+            number, other_birth, other_expiry = args.back_of.split(",")
+            _, back = synth.identity_card(doc_face, number, dt.date.fromisoformat(other_birth), dt.date.fromisoformat(other_expiry))
+        if args.front_selfie:
+            front = synth.Image.fromarray(cv2.cvtColor(synth.selfie_frame(synth.load_asset(args.selfie_face)), cv2.COLOR_BGR2RGB))
+        (out / "front.jpg").write_bytes(synth.jpeg(front))
+        (out / "back.jpg").write_bytes(synth.jpeg(back))
 
     models = ROOT / "models"
     engine = FaceEngine(models)
@@ -95,7 +104,7 @@ def main() -> int:
         still = synth.selfie_frame(synth.load_asset(args.selfie_face))
         write_y4m(Path(args.y4m), [still] * 25)
     if args.card_video:
-        card = cv2.cvtColor(np.asarray(synth.scene(synth.card_front(doc_face), angle=-2, size=(1280, 960))), cv2.COLOR_RGB2BGR)
+        card = cv2.cvtColor(np.asarray(synth.scene(synth.card_front(doc_face, args.number, birth, expiry), angle=-2, size=(1280, 960))), cv2.COLOR_RGB2BGR)
         write_y4m(Path(args.card_video), [card] * 25)
     if args.camera_frames:
         poses = Path(args.camera_frames)
@@ -105,9 +114,25 @@ def main() -> int:
         still_points = landmarks(landmarker, still)
         cv2.imwrite(str(poses / "neutral.jpg"), still, [cv2.IMWRITE_JPEG_QUALITY, 85])
         cv2.imwrite(str(poses / "closed.jpg"), synth.close_eyes(still, still_points), [cv2.IMWRITE_JPEG_QUALITY, 85])
+        cv2.imwrite(str(poses / "mouth.jpg"), synth.open_mouth(still, still_points), [cv2.IMWRITE_JPEG_QUALITY, 85])
         for i, strength in enumerate((0.35, 0.7, 1.0, 1.3, 1.5), start=1):
             cv2.imwrite(str(poses / f"left_{i}.jpg"), synth.yaw_warp(still, still_box, strength), [cv2.IMWRITE_JPEG_QUALITY, 85])
             cv2.imwrite(str(poses / f"right_{i}.jpg"), synth.yaw_warp(still, still_box, -strength), [cv2.IMWRITE_JPEG_QUALITY, 85])
+    if args.doc_poses:
+        # Portrait imprimé sur la carte, recentré dans un cadre de webcam (attaque C du critique).
+        card = cv2.cvtColor(np.asarray(synth.card_front(doc_face, args.number, birth, expiry)), cv2.COLOR_RGB2BGR)
+        fake = np.full((480, 640, 3), 120, np.uint8)
+        fake[10:470, 140:500] = cv2.resize(card[200:546, 45:315], (360, 460))
+        poses = Path(args.doc_poses)
+        poses.mkdir(parents=True, exist_ok=True)
+        fake_box = tuple(int(v) for v in engine.detect(fake)[0].box)
+        fake_points = landmarks(landmarker, fake)
+        cv2.imwrite(str(poses / "neutral.jpg"), fake, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        cv2.imwrite(str(poses / "closed.jpg"), synth.close_eyes(fake, fake_points), [cv2.IMWRITE_JPEG_QUALITY, 85])
+        cv2.imwrite(str(poses / "mouth.jpg"), synth.open_mouth(fake, fake_points), [cv2.IMWRITE_JPEG_QUALITY, 85])
+        for i, strength in enumerate((0.35, 0.7, 1.0, 1.3, 1.5), start=1):
+            cv2.imwrite(str(poses / f"left_{i}.jpg"), synth.yaw_warp(fake, fake_box, strength), [cv2.IMWRITE_JPEG_QUALITY, 85])
+            cv2.imwrite(str(poses / f"right_{i}.jpg"), synth.yaw_warp(fake, fake_box, -strength), [cv2.IMWRITE_JPEG_QUALITY, 85])
     landmarker.close()
     print(json.dumps({"frames": len(frames), "challenge": challenge}))
     return 0

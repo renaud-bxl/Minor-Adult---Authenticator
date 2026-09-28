@@ -9,15 +9,17 @@ use Predis\ClientInterface;
 
 /**
  * Défis du contrôle du vivant, TIRÉS CÔTÉ SERVEUR (random_int) et conservés dans Redis (jamais confiés au
- * navigateur comme source de vérité) : ordre aléatoire de « tourner la tête à gauche », « à droite » et
- * « cligner des yeux », identifiant de capture à usage unique, heure d'émission (délai minimal).
+ * navigateur comme source de vérité) : suite de défis parmi « tourner la tête à gauche », « à droite »,
+ * « fermer les yeux », « ouvrir la bouche », répétitions permises mais jamais deux défis identiques de suite
+ * (4 défis : 4 × 3 × 3 × 3 = 108 suites), identifiant de capture à usage unique, heure d'émission.
+ * Limite (documentée) : le défi est connu avant la capture ; il ne gêne pas une animation pilotée en direct.
  *
  * Nombre de tirages borné par session : sans cette borne, un fraudeur pourrait redemander des défis
  * jusqu'à obtenir l'ordre de sa vidéo préenregistrée.
  */
 final class ChallengeStore
 {
-    public const ACTIONS = ['turn_left', 'turn_right', 'blink'];
+    public const ACTIONS = ['turn_left', 'turn_right', 'blink', 'open_mouth'];
 
     public function __construct(
         private readonly ClientInterface $redis,
@@ -37,14 +39,15 @@ final class ChallengeStore
         if ($attempts > $this->maxAttempts) {
             return null;
         }
-        $steps = self::ACTIONS;
-        for ($i = count($steps) - 1; $i > 0; $i--) { // Fisher-Yates, aléa cryptographique
-            $j = random_int(0, $i);
-            [$steps[$i], $steps[$j]] = [$steps[$j], $steps[$i]];
+        $steps = [];
+        for ($i = 0, $count = max(1, min($stepCount, 6)); $i < $count; $i++) {
+            // Aléa cryptographique ; jamais le même défi que le précédent.
+            $choices = array_values(array_diff(self::ACTIONS, $steps === [] ? [] : [$steps[$i - 1]]));
+            $steps[] = $choices[random_int(0, count($choices) - 1)];
         }
         $record = [
             'capture_id' => Crypto::randomAlnum(24),
-            'steps' => array_slice($steps, 0, max(1, min($stepCount, count($steps)))),
+            'steps' => $steps,
             'issued_ms' => $nowMs,
         ];
         $this->redis->setex('capture:' . $sessionId, $this->ttl, json_encode($record, JSON_THROW_ON_ERROR));

@@ -311,7 +311,7 @@ final class VerificationService
         $now = $this->now();
         if ($session !== null && $session->isOpen($now)) {
             return [...$base, 'status' => 'pending', 'is_adult' => false, 'session_id' => $session->publicId,
-                'session_expires_at' => $this->iso($session->expiresAt), 'review' => $session->inReview($now)];
+                'session_expires_at' => $this->iso($session->expiresAt)];
         }
         if ($session !== null && $session->status === VerificationSession::FAILED) {
             return [...$base, 'status' => 'failed', 'is_adult' => false, 'session_id' => $session->publicId,
@@ -625,7 +625,7 @@ final class VerificationService
         $this->runMethod($project, $session, $methodId, [
             'capture' => $capture,
             'challenge' => $challenge,
-            'review_allowed' => $project->belowThreshold === 'review',
+            'review_allowed' => Methods\LocalBiometricsProvider::MANUAL_REVIEW_ENABLED && $project->belowThreshold === 'review',
         ], $session->shareOptIn, $ip);
     }
 

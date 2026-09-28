@@ -126,6 +126,9 @@ final class ConfigValidatorTest extends TestCase
         self::assertCount(7, $problems);
         self::assertStringContainsString('acceptation ≥ 0,363', implode("\n", $problems), 'plancher SFace');
         self::assertStringNotContainsString('court', implode("\n", $problems), 'aucun secret dans les messages');
+        // Revue manuelle désactivée en V1 (audit phase 3, E3) : « review » refusé au démarrage.
+        $review = ConfigValidator::biometricsProblems($this->config(['biometrics' => [...$valid, 'below_threshold_default' => 'review']]));
+        self::assertSame(['BIOMETRICS_BELOW_THRESHOLD doit valoir fail (revue manuelle désactivée en V1)'], $review);
     }
 
     public function testWebRequestsRequirePhpFpm(): void

@@ -115,7 +115,7 @@ final class DocumentCaptureTest extends ModuleTestCase
     }
 
     /** @return array<string, mixed> */
-    private static function payload(int $steps = 3, string $type = 'id_card'): array
+    private static function payload(int $steps = 4, string $type = 'id_card'): array
     {
         $doc = base64_encode(CaptureTest::jpeg(640, 480));
         $frame = base64_encode(CaptureTest::jpeg(160, 120));
@@ -157,8 +157,11 @@ final class DocumentCaptureTest extends ModuleTestCase
         self::assertStringContainsString('js/capture.js', $capturePage->body());
         self::assertStringNotContainsString('<script>', $capturePage->body(), 'aucun script inline (CSP)');
         $capture = $this->start($id, $capturePage);
-        self::assertCount(3, $capture['challenge']);
-        self::assertEqualsCanonicalizing(['turn_left', 'turn_right', 'blink'], $capture['challenge'], 'défis tirés par le serveur');
+        self::assertCount(4, $capture['challenge'], 'défis tirés par le serveur');
+        self::assertSame([], array_diff($capture['challenge'], ['turn_left', 'turn_right', 'blink', 'open_mouth']));
+        for ($i = 1; $i < 4; $i++) {
+            self::assertNotSame($capture['challenge'][$i - 1], $capture['challenge'][$i], 'jamais deux défis identiques de suite');
+        }
         self::assertSame(32, strlen((string) base64_decode((string) $capture['key'], true)));
 
         usleep(40_000);
@@ -260,44 +263,41 @@ final class DocumentCaptureTest extends ModuleTestCase
         self::assertStringContainsString('data-result-status="verified"', $this->client->get((string) self::body($response)['redirect'])->body());
     }
 
-    public function testBelowThresholdGoesToManualReviewWhenTheProjectChoosesIt(): void
+    public function testBelowThresholdAlwaysFailsManualReviewIsDisabled(): void
     {
+        // Audit phase 3, E3 : sans image, la revue ne vérifie rien ; sous le seuil, la vérification échoue.
         $p = $this->createProject(webhooks: ['test' => 'https://shop.example/hooks']);
-        ProjectAdmin::fromApplication($this->app)->setBelowThreshold($p['project'], 'review');
-        $key = $p['keys']['test'];
+        try {
+            ProjectAdmin::fromApplication($this->app)->setBelowThreshold($p['project'], 'review');
+            self::fail('Revue manuelle acceptée.');
+        } catch (\InvalidArgumentException $e) {
+            self::assertStringContainsString('désactivée', $e->getMessage());
+        }
+        // Même un projet resté en « review » en base (avant la migration 0020) échoue sous le seuil.
+        $this->app->db()->execute("UPDATE projects SET below_threshold = 'review' WHERE id = ?", [$p['project']->id]);
         $this->service->response = FakeBiometricsService::result(age: 25, score: 0.35);
-        $id = $this->sessionReady($key, 'review@example.be');
-        $page = $this->fullCapture($id);
-        self::assertStringContainsString('data-result-status="review"', $page->body());
+        $page = $this->fullCapture($this->sessionReady($p['keys']['test'], 'review@example.be'));
+        self::assertStringContainsString('data-failure-reason="face_mismatch"', $page->body());
+        self::assertNull($this->value('SELECT id FROM manual_reviews'));
+        $status = self::body($this->api($p['keys']['test'], 'GET', '/api/v1/verifications?email=review@example.be'));
+        self::assertSame(['failed', 'face_mismatch'], [$status['status'], $status['failure_reason']]);
+        self::assertArrayNotHasKey('review', $status);
+    }
 
-        $status = self::body($this->api($key, 'GET', '/api/v1/verifications?email=review@example.be'));
-        self::assertSame(['pending', true], [$status['status'], $status['review']]);
-        self::assertSame(0, (int) $this->value('SELECT COUNT(*) FROM webhook_deliveries'), 'aucun webhook avant la décision');
-        $review = $this->app->db()->fetchOne('SELECT * FROM manual_reviews');
-        self::assertSame(['0.3500', 1, 1, '[]'], [$review['face_match_score'], (int) $review['liveness_passed'], (int) $review['provisional_is_adult'], $review['reasons']]);
-        self::assertGreaterThan(time() + 47 * 3600, strtotime((string) $this->value('SELECT expires_at FROM verification_sessions WHERE public_id = ?', [$id]) . ' UTC'));
-
-        // Plus aucune étape possible pendant la revue.
-        self::assertSame(303, $this->client->get('/s/' . $id . '/document')->status());
-        self::assertCount(1, (new ManualReviewRepository($this->app->db()))->pending());
-
-        $service = VerificationService::fromApplication($this->app);
-        self::assertTrue($service->decideReview((int) $review['id'], true));
-        self::assertFalse($service->decideReview((int) $review['id'], false), 'une seule décision');
-        $status = self::body($this->api($key, 'GET', '/api/v1/verifications?email=review@example.be'));
-        self::assertSame(['verified', true], [$status['status'], $status['is_adult']]);
-        self::assertSame(1, (int) $this->value('SELECT COUNT(*) FROM webhook_deliveries'), 'webhook à la décision');
-
-        // Rejet : échec « manual_review_rejected ».
-        $id2 = $this->sessionReady($key, 'review2@example.be');
-        $this->fullCapture($id2);
-        $second = (int) $this->value("SELECT id FROM manual_reviews WHERE status = 'pending'");
-        self::assertTrue($service->decideReview($second, false));
-        self::assertSame('manual_review_rejected', self::body($this->api($key, 'GET', '/api/v1/verifications?email=review2@example.be'))['failure_reason']);
-
-        // Même score, projet en « échec » : pas de revue.
-        ProjectAdmin::fromApplication($this->app)->setBelowThreshold($p['project'], 'fail');
-        self::assertStringContainsString('data-failure-reason="face_mismatch"', $this->fullCapture($this->sessionReady($key, 'review3@example.be'))->body());
+    public function testInconsistentOrUnsupportedDocumentsFail(): void
+    {
+        $p = $this->createProject();
+        foreach ([
+            'a@example.be' => [['document_not_detected'], 'document_inconsistent'],
+            'b@example.be' => [['document_sides_mismatch'], 'document_inconsistent'],
+            'u@example.be' => [['document_unsupported'], 'document_unsupported'],
+        ] as $email => [$reasons, $expected]) {
+            $unsupported = $expected === 'document_unsupported';
+            $this->service->response = FakeBiometricsService::result(age: $unsupported ? null : 51, expired: $unsupported ? null : false,
+                score: null, mrz: !$unsupported, reasons: $reasons);
+            $page = $this->fullCapture($this->sessionReady($p['keys']['test'], $email));
+            self::assertStringContainsString('data-failure-reason="' . $expected . '"', $page->body(), $email);
+        }
     }
 
     public function testCaptureIsSingleUseBoundAndTimed(): void
@@ -340,7 +340,7 @@ final class DocumentCaptureTest extends ModuleTestCase
         usleep(40_000);
         // Horodatages du navigateur incohérents avec le temps écoulé côté serveur (60 s annoncées).
         $payload = self::payload();
-        $payload['frames'][3]['t'] = 60_000;
+        $payload['frames'][count($payload['frames']) - 1]['t'] = 60_000;
         self::assertSame('capture_invalid', self::body($this->submit($id, $capture, self::encrypt($capture, $payload)))['error']);
 
         $capture = $this->start($id, $this->client->get('/s/' . $id . '/document'));

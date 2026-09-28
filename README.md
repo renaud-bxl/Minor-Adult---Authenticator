@@ -120,6 +120,12 @@ téléchargés une fois, au déploiement, avec contrôle SHA-256 (licences : `do
 sont traitées en mémoire ; la réponse se limite à `{ age, doc_expired, face_match_score, liveness_passed,
 mrz_valid, reasons[] }`.
 
+**Niveau d'assurance : faible à modéré, sans certification.** Recto, verso et portrait sont liés à une même
+pièce (document détecté, portrait à sa place, champs imprimés = MRZ) ; contrôle du vivant par défis aléatoires.
+Aucune détection d'injection (caméra virtuelle) ni de deepfake, aucun contrôle des éléments de sécurité du
+document : une autre photo de la personne animée et injectée passe (l'E2E le démontre). Détail pour les clients :
+`docs/integration.md`, encadré « ce qu'elle garantit, et ce qu'elle ne garantit pas ».
+
 ### Installation (Debian 12, sans toucher au Python du système)
 
 ```bash
@@ -199,11 +205,19 @@ modèles ou les photos de test manquent). E2E de la capture (fausse caméra Chro
 
 ```bash
 biometrics/.venv/bin/python biometrics/scripts/make_test_images.py --out /tmp/e2e/set \
-    --camera-frames /tmp/e2e/poses --y4m /tmp/e2e/face.y4m --card-video /tmp/e2e/card.y4m
-python3 tools/e2e_capture.py --assets /tmp/e2e     # captures dans docs/screenshots/phase-3/
+    --camera-frames /tmp/e2e/poses --doc-poses /tmp/e2e/doc-poses --y4m /tmp/e2e/face.y4m --card-video /tmp/e2e/card.y4m
+# Base jetable (jamais la base de développement : le journal d'audit n'est jamais retouché) :
+mysql -uroot -e "CREATE DATABASE veriage_e2e; GRANT ALL ON veriage_e2e.* TO 'veriage'@'localhost';"
+export DB_DATABASE=veriage_e2e REDIS_DB=13 VERIFY_URL=http://127.0.0.1:8010
+php -d variables_order=EGPCS bin/migrate.php
+php -d variables_order=EGPCS bin/project.php create --account-name=E2E --name=E2E --origins=http://127.0.0.1:8011
+php -d variables_order=EGPCS -S 127.0.0.1:8010 -t public public/index.php &
+python3 tools/e2e_capture.py --assets /tmp/e2e --verify http://127.0.0.1:8010 --api-key sk_test_…
+mysql -uroot -e "DROP DATABASE veriage_e2e"          # suppression en bloc à la fin
 ```
 
-Revue manuelle (projets réglés sur `review`) : `php bin/review.php list | approve --id=N | reject --id=N`.
+Revue manuelle : **désactivée en V1** (audit de la phase 3, E3) ; sous le seuil, la vérification échoue.
+`bin/review.php` reste en place pour une réactivation après décision juridique.
 
 ## Commandes
 
@@ -219,7 +233,7 @@ Revue manuelle (projets réglés sur `review`) : `php bin/review.php list | appr
 | `php bin/project.php create …` | projet client : clés `sk_test_`/`sk_live_`, secrets de signature, domaines, webhooks (voir l'en-tête du script) |
 | `php bin/worker.php [--id=1] [--once]` | worker : webhooks signés (relances exponentielles) et e-mails en file (service systemd `deploy/systemd/`) |
 | `php cron/purge_tmp.php` | purge des fichiers temporaires éventuels (toutes les 15 minutes) |
-| `php bin/review.php list` | file de vérification manuelle (biométrie) |
+| `php bin/review.php list` | file de vérification manuelle (désactivée en V1) |
 | `php bin/biometrics.php health` | état du microservice biométrique (authentification mutuelle) |
 | `python3 tools/e2e_capture.py --assets DIR` | E2E de la capture pièce d'identité + visage (fausse caméra Chromium) |
 | `php cron/purge.php` | purge RGPD (sessions, vérifications expirées, jetons, comptes non validés, audit) ; cron horaire (`deploy/crontab`) |

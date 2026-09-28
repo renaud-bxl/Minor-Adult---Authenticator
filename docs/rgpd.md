@@ -49,19 +49,30 @@
   contient qu'un chiffré, purgée par cron toutes les 15 minutes. Tesseract lit l'image sur son entrée
   standard (test `test_tesseract_writes_no_file`, strace).
 - Réponse du service limitée à six champs ; PHP rejette toute réponse qui en contient d'autres.
-- Rien n'est conservé : ni âge exact, ni date de naissance, ni score (sauf, en cas de revue manuelle, le
-  score et les motifs codés, jusqu'à la purge des sessions).
+- Rien n'est conservé : ni âge exact, ni date de naissance, ni numéro, ni score. Les champs imprimés du recto
+  (date de naissance, numéro, expiration) sont lus par OCR dans le service, en mémoire, pour lier les deux faces
+  de la pièce, puis oubliés ; seuls des codes de motif en sortent.
 - Limites connues : la mémoire du processus n'est pas effacée octet par octet (Python) ; `LimitCORE=0`
   empêche les vidages mémoire.
 
+### Biométrie : niveau d'assurance (à reprendre dans l'AIPD)
+
+**Faible à modéré, sans certification.** La méthode arrête le mineur opportuniste (photo au lieu du recto,
+pièces combinées, photo fixe, vidéo rejouée, portrait du document animé). Elle n'arrête pas : une autre photo
+de la personne animée et injectée (caméra virtuelle), un échange de visage en temps réel (deepfake), un faux
+document cohérent (aucun contrôle des éléments de sécurité ni de la puce). Aucune détection d'injection ni de
+deepfake. Taux mesurés seulement sur un jeu synthétique (liaison des faces : 1,4 % de faux rejets, 100 % des
+pièces combinées refusées, `biometrics/scripts/measure_binding.py`) : à mesurer sur de vraies photos.
+
 ### Biométrie : points à trancher ⚖️
 
-- Revue manuelle : aujourd'hui, l'opérateur ne voit que des scores. Une revue humaine réelle exigerait de
-  conserver les images (chiffrées, durée courte) : base légale, durée, information à décider.
+- Revue manuelle : **retirée de la V1** (sans image, l'opérateur ne verrait que le score déjà comparé au seuil).
+  Sous le seuil, la vérification échoue. Réactivation seulement après décision sur une conservation chiffrée et
+  limitée des images (base légale, durée, information).
 - Calibrage des seuils et mesure des taux d'erreur (faux rejets selon l'âge, le teint, le type de document)
   avant la production : exigence de l'AIPD (biais, art. 22 si décision automatisée).
-- Décision entièrement automatisée (art. 22) : droit d'obtenir une intervention humaine → la revue manuelle
-  ou une autre méthode (eID) doit rester accessible.
+- Décision entièrement automatisée (art. 22) : droit d'obtenir une intervention humaine. Voie actuelle : une
+  autre méthode reste proposée sur la page, et la personne peut contacter le site client ou VeriAge ; à valider.
 - Données d'entraînement des modèles : voir `docs/licences.md`.
 
 ## 4. Droits des personnes

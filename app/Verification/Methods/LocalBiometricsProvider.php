@@ -94,8 +94,28 @@ final class LocalBiometricsProvider implements VerificationMethodInterface
         return $this->decide($result, $session->minAge, (bool) ($input['review_allowed'] ?? false));
     }
 
+    /**
+     * Motifs du service indiquant que les faces envoyées ne forment pas UNE même pièce (recto sans document,
+     * portrait hors de sa place, champs imprimés ≠ MRZ, type de document ≠ type de MRZ) : exigence E1 de l'audit.
+     */
+    public const INCONSISTENT_REASONS = ['document_not_detected', 'document_portrait_not_found', 'document_sides_mismatch',
+        'document_front_unreadable', 'document_type_mismatch'];
+
+    /**
+     * Revue manuelle : DÉSACTIVÉE en V1 (audit de la phase 3, E3). Sans image, l'opérateur ne verrait que le
+     * score, déjà comparé au seuil : « approuver » reviendrait à abaisser le seuil sous celui de même personne.
+     * À réactiver seulement après une décision juridique sur la conservation chiffrée des images.
+     */
+    public const MANUAL_REVIEW_ENABLED = false;
+
     public function decide(AnalysisResult $result, int $minAge, bool $reviewAllowed): VerificationOutcome
     {
+        if (in_array('document_unsupported', $result->reasons, true)) {
+            return VerificationOutcome::failed('document_unsupported');
+        }
+        if (array_intersect(self::INCONSISTENT_REASONS, $result->reasons) !== []) {
+            return VerificationOutcome::failed('document_inconsistent');
+        }
         if (!$result->mrzValid || $result->age === null) {
             return VerificationOutcome::failed('document_unreadable');
         }
@@ -112,7 +132,7 @@ final class LocalBiometricsProvider implements VerificationMethodInterface
         if ($result->faceMatchScore >= $this->matchThreshold) {
             return VerificationOutcome::verified($isAdult);
         }
-        if ($reviewAllowed && $result->faceMatchScore >= $this->reviewThreshold) {
+        if (self::MANUAL_REVIEW_ENABLED && $reviewAllowed && $result->faceMatchScore >= $this->reviewThreshold) {
             return VerificationOutcome::review($isAdult, $result->faceMatchScore, $result->livenessPassed, $result->reasons);
         }
 

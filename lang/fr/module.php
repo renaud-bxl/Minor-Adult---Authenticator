@@ -117,8 +117,8 @@ return [
     'biometric.consent_title' => 'Consentement aux données biométriques',
     'biometric.intro' => 'Cette méthode traite des données biométriques, protégées par l’article 9 du RGPD. Nous avons donc besoin de votre accord explicite avant de commencer.',
     'biometric.what_title' => 'Ce que nous traitons',
-    'biometric.what_document' => 'Une photo du recto et du verso de votre carte d’identité, ou de la page photo de votre passeport. Nous lisons la zone MRZ (les lignes « <<< ») pour en déduire seulement votre âge et la validité du document.',
-    'biometric.what_face' => 'Une courte série d’images de votre visage, pendant que vous suivez des consignes (tourner la tête, fermer les yeux). Elle permet de vérifier que vous êtes bien présent et que vous êtes la personne du document.',
+    'biometric.what_document' => 'Une photo du recto et du verso de votre carte d’identité, ou de la page photo de votre passeport. Nous lisons la zone MRZ (les lignes « <<< ») et les informations imprimées de la face avec la photo (date de naissance, numéro et date d’expiration du document), uniquement pour vérifier qu’il s’agit d’une même pièce, en déduire votre âge et contrôler la validité du document. Rien de ce qui est lu n’est conservé ni transmis.',
+    'biometric.what_face' => 'Une courte série d’images de votre visage, pendant que vous suivez des consignes (tourner la tête, fermer les yeux, ouvrir la bouche). Elle permet de vérifier que vous êtes bien présent et que vous êtes la personne du document.',
     'biometric.how_title' => 'Comment',
     'biometric.how_local' => 'L’analyse a lieu uniquement sur nos serveurs, en Europe, sans aucun service tiers. Les images sont traitées en mémoire et effacées dès la fin de l’analyse : elles ne sont jamais enregistrées.',
     'biometric.how_result' => '{project} reçoit seulement le résultat : âge requis atteint ou non. Jamais votre nom, votre photo, votre date de naissance ni le numéro de votre document.',
@@ -189,4 +189,7 @@ return [
     'result.reason.capture_rejected' => 'Les images envoyées n’ont pas pu être analysées.',
     'result.reason.capture_attempts_exceeded' => 'Nombre maximal d’essais atteint.',
     'result.reason.manual_review_rejected' => 'Après examen, votre vérification n’a pas pu être confirmée.',
+    'capture.challenge.open_mouth' => 'Ouvrez grand la bouche une seconde, puis refermez-la.',
+    'result.reason.document_inconsistent' => 'Les photos envoyées ne correspondent pas à une même pièce d’identité : le recto doit montrer la face avec votre photo, et ses informations (date de naissance, numéro, date d’expiration) doivent être lisibles et identiques à celles du verso.',
+    'result.reason.document_unsupported' => 'Ce type de document n’est pas encore pris en charge (par exemple l’ancienne carte d’identité française). Utilisez votre passeport, ou une autre méthode de vérification.',
 ];

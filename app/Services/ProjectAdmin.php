@@ -103,7 +103,7 @@ final class ProjectAdmin
 
         return $this->db->transaction(function () use ($accountId, $name, $origins, $minAge, $validityDays, $webhooks, $acceptShared, $negativeTtlHours): array {
             [$project, $secrets] = $this->projects->create($accountId, $name, $minAge, $validityDays, $origins, self::DEFAULT_METHODS, $acceptShared, $negativeTtlHours);
-            if ($this->defaultBelowThreshold === 'review') {
+            if ($this->defaultBelowThreshold === 'review' && \App\Verification\Methods\LocalBiometricsProvider::MANUAL_REVIEW_ENABLED) {
                 $this->projects->updateBelowThreshold($project->id, 'review');
                 $project = $this->projects->findById($project->id) ?? $project;
             }
@@ -131,6 +131,9 @@ final class ProjectAdmin
      */
     public function setBelowThreshold(Project $project, string $mode): void
     {
+        if ($mode === 'review' && !\App\Verification\Methods\LocalBiometricsProvider::MANUAL_REVIEW_ENABLED) {
+            throw new \InvalidArgumentException('La revue manuelle est désactivée en V1 (sans image, elle ne vérifie rien) : sous le seuil, la vérification échoue.');
+        }
         if (!in_array($mode, ['fail', 'review'], true)) {
             throw new \InvalidArgumentException('Comportement sous le seuil invalide (fail ou review).');
         }

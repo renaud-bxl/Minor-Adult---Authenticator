@@ -1,23 +1,26 @@
 """Tests E2E de la méthode « pièce d'identité + visage » (phase 3) dans un vrai Chromium, avec captures.
 
-Prérequis : module sur --verify (php -S 127.0.0.1:8000), microservice biométrique démarré
-(python -m veriage_biometrics, BIOMETRICS_* dans .env), clé sandbox du projet de démo (DEMO_API_KEY),
-images de test générées :
+Prérequis : module sur --verify (php -S ; de préférence sur une BASE JETABLE, voir README), microservice
+biométrique démarré (python -m veriage_biometrics, BIOMETRICS_* dans .env), clé sandbox (--api-key ou
+E2E_API_KEY, sinon DEMO_API_KEY de .env), images de test générées :
     biometrics/.venv/bin/python biometrics/scripts/make_test_images.py --out DIR/set \\
-        --camera-frames DIR/poses --y4m DIR/face.y4m --card-video DIR/card.y4m
+        --camera-frames DIR/poses --doc-poses DIR/doc-poses --y4m DIR/face.y4m --card-video DIR/card.y4m
 
-Usage : python3 tools/e2e_capture.py --assets DIR [--verify http://127.0.0.1:8000] [--out docs/screenshots/phase-3]
+Usage : python3 tools/e2e_capture.py --assets DIR [--verify URL] [--api-key sk_test_…] [--out docs/screenshots/phase-3]
 Variable CHROMIUM_PATH : exécutable Chromium (sinon celui géré par Playwright).
 
-Caméras :
-- documents : fausse caméra de Chromium (--use-fake-device-for-media-stream +
-  --use-file-for-fake-video-capture=card.y4m, vidéo du recto d'une carte fictive), puis envoi d'un fichier
-  (solution de secours) pour le verso ;
-- selfie, scénario 1 : caméra SIMULÉE qui suit les consignes affichées (poses pré-calculées d'une photo
-  du domaine public : rotations, yeux fermés), injectée à la place de getUserMedia pour la caméra frontale.
-  Une vidéo .y4m tourne en boucle sans « voir » les défis tirés au hasard : elle ne peut pas les réussir ;
-- selfie, scénario 2 : la fausse caméra de Chromium avec une vidéo FIXE d'un visage (face.y4m) : le contrôle
-  du vivant doit échouer (aucun mouvement) — c'est le comportement attendu face à une vidéo rejouée.
+⚠ Ce que ces scénarios démontrent, honnêtement :
+- Scénario 1, LIMITE CONNUE (attaque réussie) : aucune personne réelle n'est filmée. Une PHOTO FIXE (une autre
+  photo de la titulaire que celle du document), animée en 2D pour suivre les consignes affichées, est injectée
+  à la place de la caméra (remplacement de getUserMedia, comme le ferait une caméra virtuelle). Le résultat est
+  « verified » : la méthode ne détecte ni l'injection ni l'animation d'une photo. C'est aussi le seul moyen
+  d'exercer tout le parcours automatiquement (une vidéo .y4m en boucle ne suit pas des défis tirés au hasard).
+- Scénario 2 (attaque C du critique, doit échouer) : le PORTRAIT DU DOCUMENT lui-même, animé de la même façon
+  → refusé (« face_identical_to_document » → liveness_failed).
+- Scénario 3 (attaque A, doit échouer) : un selfie envoyé à la place du recto → document_inconsistent.
+- Scénario 4 : vidéo fixe d'un visage rejouée par la fausse caméra de Chromium (face.y4m) → liveness_failed.
+- Scénario 5 : aucune caméra → envoi de fichier proposé pour le document, selfie impossible.
+Documents : recto par la fausse caméra de Chromium (card.y4m, carte fictive), verso par fichier.
 Code retour ≠ 0 au premier échec.
 """
 import argparse
@@ -62,6 +65,7 @@ VIRTUAL_CAMERA = """
         return idx === 0 ? images.neutral : images[(action === 'turn_left' ? 'left_' : 'right_') + idx];
       }
       if (action === 'blink') { return t > 0.5 && t < 1.5 ? images.closed : images.neutral; }
+      if (action === 'open_mouth') { return t > 0.5 && t < 1.6 ? images.mouth : images.neutral; }
       return images.neutral;
     };
     const draw = () => { ctx.drawImage(pick(), 0, 0, 640, 480); requestAnimationFrame(draw); };
@@ -92,10 +96,13 @@ def env_value(name):
     return values[-1] if values else ""
 
 
+API_KEY = ""
+
+
 def api(verify, method, path, body=None):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     request = urllib.request.Request(verify + path, method=method, data=json.dumps(body).encode() if body else None,
-                                     headers={"Authorization": "Bearer " + env_value("DEMO_API_KEY"), "Content-Type": "application/json"})
+                                     headers={"Authorization": "Bearer " + (API_KEY or env_value("DEMO_API_KEY")), "Content-Type": "application/json"})
     with opener.open(request, timeout=30) as response:
         return json.load(response)
 
@@ -156,19 +163,24 @@ def main() -> int:
     parser.add_argument("--verify", default="http://127.0.0.1:8000")
     parser.add_argument("--assets", required=True)
     parser.add_argument("--out", default="docs/screenshots/phase-3")
+    parser.add_argument("--api-key", default=os.environ.get("E2E_API_KEY", ""))
     args = parser.parse_args()
+    global API_KEY
+    API_KEY = args.api_key
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     assets = pathlib.Path(args.assets)
     poses = {p.stem: "data:image/jpeg;base64," + base64.b64encode(p.read_bytes()).decode() for p in sorted((assets / "poses").glob("*.jpg"))}
     camera = VIRTUAL_CAMERA % json.dumps(poses)
+    doc_poses = {p.stem: "data:image/jpeg;base64," + base64.b64encode(p.read_bytes()).decode() for p in sorted((assets / "doc-poses").glob("*.jpg"))}
+    doc_camera = VIRTUAL_CAMERA % json.dumps(doc_poses)
     launch = {"executable_path": os.environ["CHROMIUM_PATH"]} if os.environ.get("CHROMIUM_PATH") else {}
     fake = ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"]
     stamp = int(time.time())
 
     with sync_playwright() as p:
-        # 1. Carte d'identité : recto par la fausse caméra (y4m), verso par fichier, selfie qui suit les défis.
-        print("Scénario 1 : carte d'identité, majeur, défis réussis (FR, desktop)")
+        # 1. LIMITE CONNUE : photo fixe animée injectée à la place de la caméra → acceptée (attaque réussie).
+        print("Scénario 1 — LIMITE CONNUE : une photo animée injectée passe (FR, desktop)")
         browser = p.chromium.launch(args=[*fake, f"--use-file-for-fake-video-capture={assets / 'card.y4m'}"], **launch)
         ctx = context(browser, init_script=camera)
         page = ctx.new_page()
@@ -194,7 +206,7 @@ def main() -> int:
         page.wait_for_selector("[data-result-status]", timeout=90000)
         status = page.get_attribute("[data-result-status]", "data-result-status")
         shot(page, out, "capture-fr-desktop-10-resultat")
-        check("résultat affiché : verified", status == "verified", status + " " + page.inner_text("main"))
+        check("LIMITE CONNUE : photo animée injectée acceptée (aucune détection d'injection)", status == "verified", status + " " + page.inner_text("main"))
         confirmed = api(args.verify, "GET", "/api/v1/verifications?email=" + urllib.request.quote(f"e2e.adult+{stamp}@example.com"))
         check("API : verified, majeur, méthode id_document_face", (confirmed["status"], confirmed.get("is_adult"), confirmed.get("method")) == ("verified", True, "id_document_face"), str(confirmed))
         check("aucune erreur JavaScript (CSP comprise)", console == [], str(console))
@@ -216,8 +228,44 @@ def main() -> int:
         ctx.close()
         browser.close()
 
-        # 2. Vidéo fixe d'un visage (fausse caméra Chromium, y4m) : le contrôle du vivant échoue.
-        print("Scénario 2 : vidéo fixe rejouée (y4m), documents par fichier (FR)")
+        # 2. Attaque C : le portrait du document lui-même, animé et injecté → refusé.
+        print("Scénario 2 : attaque C, portrait du document animé (doit échouer)")
+        browser = p.chromium.launch(args=fake, **launch)
+        ctx = context(browser, init_script=doc_camera)
+        page = ctx.new_page()
+        session = api(args.verify, "POST", "/api/v1/sessions", {"email": f"e2e.attack.c+{stamp}@example.com", "min_age": 18, "lang": "fr"})
+        until_method(page, session["verify_url"])
+        page.click("[data-panel=type] button[type=submit]")
+        document_by_file(page, assets / "set" / "front.jpg")
+        document_by_file(page, assets / "set" / "back.jpg")
+        page.wait_for_selector("[data-action=start-selfie]:not([hidden])", timeout=15000)
+        page.click("[data-action=start-selfie]")
+        page.wait_for_selector("[data-result-status]", timeout=90000)
+        reason = page.get_attribute("[data-failure-reason]", "data-failure-reason")
+        shot(page, out, "capture-fr-desktop-11b-attaque-c-portrait-anime")
+        check("attaque C : portrait du document animé refusé (liveness_failed)", reason == "liveness_failed", str(reason))
+        ctx.close()
+
+        # 3. Attaque A : un selfie envoyé à la place du recto → refusé.
+        print("Scénario 3 : attaque A, selfie au lieu du recto (doit échouer)")
+        ctx = context(browser, init_script=camera)
+        page = ctx.new_page()
+        session = api(args.verify, "POST", "/api/v1/sessions", {"email": f"e2e.attack.a+{stamp}@example.com", "min_age": 18, "lang": "fr"})
+        until_method(page, session["verify_url"])
+        page.click("[data-panel=type] button[type=submit]")
+        document_by_file(page, assets / "poses" / "neutral.jpg")
+        document_by_file(page, assets / "set" / "back.jpg")
+        page.wait_for_selector("[data-action=start-selfie]:not([hidden])", timeout=15000)
+        page.click("[data-action=start-selfie]")
+        page.wait_for_selector("[data-result-status]", timeout=90000)
+        reason = page.get_attribute("[data-failure-reason]", "data-failure-reason")
+        shot(page, out, "capture-fr-desktop-11c-attaque-a-selfie-au-recto")
+        check("attaque A : selfie au lieu du recto refusé (document_inconsistent)", reason == "document_inconsistent", str(reason))
+        ctx.close()
+        browser.close()
+
+        # 4. Vidéo fixe d'un visage (fausse caméra Chromium, y4m) : le contrôle du vivant échoue.
+        print("Scénario 4 : vidéo fixe rejouée (y4m), documents par fichier (FR)")
         browser = p.chromium.launch(args=[*fake, f"--use-file-for-fake-video-capture={assets / 'face.y4m'}"], **launch)
         ctx = context(browser)
         page = ctx.new_page()
@@ -235,7 +283,7 @@ def main() -> int:
         ctx.close()
 
         # 3. Sans caméra : le selfie reste obligatoire en direct (aucun envoi de fichier proposé).
-        print("Scénario 3 : aucune caméra")
+        print("Scénario 5 : aucune caméra")
         ctx = context(browser, init_script="navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('none', 'NotFoundError'));")
         page = ctx.new_page()
         session = api(args.verify, "POST", "/api/v1/sessions", {"email": f"e2e.nocam+{stamp}@example.com", "min_age": 18, "lang": "fr"})

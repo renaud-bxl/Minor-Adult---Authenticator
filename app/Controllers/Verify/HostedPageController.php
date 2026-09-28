@@ -70,6 +70,7 @@ final class HostedPageController extends Controller
 
             return $this->page('verify/result', [
                 ...$data,
+                'biometricPage' => $session->method === \App\Verification\Methods\LocalBiometricsProvider::ID,
                 'stepTitle' => __('module.steps.result'),
                 'result' => $result,
                 // Intégrée (modale, iframe, popup), la page ne navigue pas : le widget transmet le résultat.

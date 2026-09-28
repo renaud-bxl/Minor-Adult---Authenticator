@@ -33,6 +33,7 @@ $labels = [
     'turn_left' => __('module.capture.challenge.turn_left'),
     'turn_right' => __('module.capture.challenge.turn_right'),
     'blink' => __('module.capture.challenge.blink'),
+    'open_mouth' => __('module.capture.challenge.open_mouth'),
     'progress' => __('module.capture.progress'),
     'sending' => __('module.capture.sending'),
     'attempts_left' => __('module.capture.attempts_left'),

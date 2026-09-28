@@ -13,6 +13,7 @@ doivent rester synchronisés.
 | `face_detection_yunet_2023mar.onnx` | Détection de visage (OpenCV Zoo **YuNet**) | **MIT** (Shiqi Yu) | `opencv/opencv_zoo` @ `47534e27c985…`, `models/face_detection_yunet/` | `8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4` |
 | `face_recognition_sface_2021dec.onnx` | Comparaison de visages (OpenCV Zoo **SFace**) | **Apache-2.0** | `opencv/opencv_zoo` @ `47534e27c985…`, `models/face_recognition_sface/` | `0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79` |
 | `face_landmarker.task` | Points du visage : rotation de la tête, ouverture des yeux (**MediaPipe Face Landmarker**, float16, v1) | **Apache-2.0** (Google) | `storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/` | `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff` |
+| `tessdata/eng.traineddata` | OCR générique de la face imprimée (liaison recto/verso) | **Apache-2.0** (Google, Tesseract) | `tesseract-ocr/tessdata_fast` @ `87416418657359cb…` | `7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2` (identique au paquet Debian/Ubuntu `tesseract-ocr-eng`) |
 | `tessdata/mrz.traineddata` | OCR de la MRZ (police OCR-B) pour Tesseract | **BSD-3-Clause** (DoubangoTelecom) | `DoubangoTelecom/tesseractMRZ` @ `1e7adfecda5f…`, `tessdata_best/` | `e44f5b7a6bdd3f382ef3bfa84ee0057f5897946a84a094c26910e0a124f3a9bd` |
 
 Les sommes de YuNet et SFace sont aussi celles publiées par le dépôt (pointeurs Git LFS, champ `oid`).
@@ -52,7 +53,7 @@ Versions et sommes de toutes les roues : `biometrics/requirements*.txt` (install
 | Fichier | Contenu | Statut |
 |---|---|---|
 | `astronaut.png` | Eileen Collins, photo officielle de la NASA (distribuée par scikit-image) | Domaine public (œuvre du gouvernement fédéral américain) |
-| `obama.jpg`, `biden.jpg` | Portraits officiels de la Maison-Blanche (distribués par le projet face_recognition) | Domaine public (œuvres du gouvernement fédéral américain) |
+| `obama.jpg`, `obama2.jpg`, `biden.jpg` | Portraits et photo officiels de la Maison-Blanche (distribués par le projet face_recognition) ; obama2 sert de portrait du document, obama de selfie (deux photos distinctes d'une même personne) | Domaine public (œuvres du gouvernement fédéral américain) |
 
 Documents : uniquement **synthétiques**, générés par `biometrics/tests/synth.py` (État fictif « Utopie »,
 code `UTO` des spécimens ICAO 9303, mention « SPECIMEN – NOT A REAL DOCUMENT »), MRZ rendue avec la police

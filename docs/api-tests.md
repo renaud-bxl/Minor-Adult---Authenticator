@@ -637,3 +637,21 @@ exit 1   (dossier cible vide : rien n'est installé)
   verso par fichier, selfie par caméra simulée qui suit les défis → `verified` confirmé par l'API ; vidéo fixe
   rejouée → `liveness_failed` ; sans caméra : fichier proposé pour le document, selfie impossible), captures
   `docs/screenshots/phase-3/`.
+
+### Phase 3 : corrections de l'audit critique (E1 à E3, 2026-09-28)
+
+Base JETABLE `veriage_e2e` (serveur `php -S 127.0.0.1:8010`, Redis base 13), supprimée en bloc à la fin ; le
+journal d'audit de la base de développement n'a pas été touché.
+
+- Attaques du critique, vrai service Python (`biometrics/tests/test_document.py`, `BiometricsServiceTest`) :
+  - A, selfie au lieu du recto + verso d'un parent → `document_not_detected`, aucun score → PHP `document_inconsistent` ;
+  - B, carte du mineur + verso d'un parent → `document_sides_mismatch` (la MRZ lue est bien celle du parent, âge 51,
+    mais refusée) → PHP `document_inconsistent` ;
+  - C, portrait de la carte du parent animé → `face_identical_to_document` (score 0,96), `liveness_passed=false` ;
+  - C', AUTRE photo de la personne animée et injectée → **passe** : limite connue, test `xfail(strict)`.
+- `biometrics/scripts/measure_binding.py` (jeu synthétique) : 72 pièces authentiques, **1 faux rejet (1,4 %)** ;
+  36 pièces combinées (attaque B), **36 refusées (100 %)**.
+- E2E `tools/e2e_capture.py` → **11/11** : scénario 1 présenté comme LIMITE CONNUE (photo animée injectée → verified),
+  attaques C et A refusées dans le navigateur, vidéo fixe rejouée refusée, sans caméra.
+- E3 : `php bin/project.php set-below-threshold --mode=review` → refusé ; `BIOMETRICS_BELOW_THRESHOLD=review` →
+  refusé au démarrage ; migration 0020 (projets en « review » → « fail ») ; sous le seuil → `face_mismatch`.

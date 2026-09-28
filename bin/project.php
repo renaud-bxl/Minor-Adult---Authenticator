@@ -16,7 +16,8 @@ declare(strict_types=1);
  *       (--grace-hours : l'ancien secret signe encore les webhooks pendant ce délai ; 0 si compromis)
  *   php bin/project.php set-origins   --project=prj_… --origins=…
  *   php bin/project.php set-negative-ttl --project=prj_… --hours=24
- *   php bin/project.php set-below-threshold --project=prj_… --mode=fail|review
+ *   php bin/project.php set-below-threshold --project=prj_… --mode=fail
+ *       (« review » : revue manuelle désactivée en V1, refusée ; sous le seuil, la vérification échoue)
  *       (pièce d'identité + visage : correspondance sous le seuil → échec, ou revue manuelle)
  *   php bin/project.php add-webhook   --project=prj_… --mode=test|live --url=…
  *   php bin/project.php demo          (projet de démonstration ; lignes .env sur la sortie standard)
@@ -103,7 +104,7 @@ try {
             break;
 
         case 'set-below-threshold':
-            $admin->setBelowThreshold($project(), (string) ($option('mode') ?? throw new InvalidArgumentException('--mode=fail ou --mode=review requis.')));
+            $admin->setBelowThreshold($project(), (string) ($option('mode') ?? throw new InvalidArgumentException('--mode=fail requis (revue manuelle désactivée en V1).')));
             echo "Comportement sous le seuil mis à jour.\n";
             break;
 

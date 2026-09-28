@@ -36,7 +36,15 @@ final class LocalBiometricsProviderTest extends TestCase
         yield 'majeur à 18 mais pas à 21' => [$r(age: 19, score: 0.5), 21, false, 'verified:minor'];
         yield 'score égal au seuil' => [$r(score: 0.40), 18, false, 'verified:adult'];
         yield 'sous le seuil, projet en échec' => [$r(score: 0.35), 18, false, 'failed:face_mismatch'];
-        yield 'sous le seuil, projet en revue' => [$r(score: 0.35), 18, true, 'review:adult'];
+        yield 'sous le seuil, projet en revue : revue désactivée en V1' => [$r(score: 0.35), 18, true, 'failed:face_mismatch'];
+        yield 'recto sans document (attaque A)' => [$r(score: null, reasons: ['document_not_detected']), 18, false, 'failed:document_inconsistent'];
+        yield 'faces de deux pièces (attaque B)' => [$r(score: null, reasons: ['document_sides_mismatch']), 18, false, 'failed:document_inconsistent'];
+        yield 'portrait hors de sa place' => [$r(score: null, reasons: ['document_portrait_not_found']), 18, false, 'failed:document_inconsistent'];
+        yield 'type de document incohérent' => [$r(age: null, expired: null, mrz: false, score: null, reasons: ['document_type_mismatch']), 18, false, 'failed:document_inconsistent'];
+        yield 'ancienne carte française' => [$r(age: null, expired: null, mrz: false, score: null, reasons: ['document_unsupported']), 18, false, 'failed:document_unsupported'];
+        yield 'portrait du document animé (attaque C)' => [$r(score: 0.96, liveness: false, reasons: ['face_identical_to_document']), 18, false, 'failed:liveness_failed'];
+        // Défense en profondeur : un motif de liaison suffit, même si le service renvoyait un score.
+        yield 'motif de liaison malgré un score' => [$r(score: 0.9, reasons: ['document_sides_mismatch']), 18, false, 'failed:document_inconsistent'];
         yield 'sous le seuil de revue' => [$r(score: 0.29), 18, true, 'failed:face_mismatch'];
         yield 'MRZ illisible' => [$r(age: null, expired: null, mrz: false, reasons: ['mrz_not_found']), 18, true, 'failed:document_unreadable'];
         yield 'document expiré' => [$r(expired: true, reasons: ['document_expired']), 18, true, 'failed:document_expired'];
@@ -57,10 +65,12 @@ final class LocalBiometricsProviderTest extends TestCase
         self::assertSame($expected, $actual);
     }
 
-    public function testReviewKeepsOnlyTheDecisionSignals(): void
+    public function testManualReviewIsDisabledInV1(): void
     {
+        self::assertFalse(LocalBiometricsProvider::MANUAL_REVIEW_ENABLED);
         $outcome = self::provider()->decide(AnalysisResult::fromArray(FakeBiometricsService::result(score: 0.33)), 18, true);
-        self::assertSame(['face_match_score' => 0.33, 'liveness_passed' => true, 'reasons' => []], $outcome->evidence);
+        self::assertFalse($outcome->needsReview);
+        self::assertSame('face_mismatch', $outcome->failureReason);
     }
 
     public function testAvailabilityAndThresholdOrder(): void

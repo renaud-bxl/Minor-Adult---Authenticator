@@ -114,8 +114,8 @@ return [
     'biometric.consent_title' => 'Consent to biometric data',
     'biometric.intro' => 'This method processes biometric data, which is protected by Article 9 of the GDPR. We therefore need your explicit consent before we start.',
     'biometric.what_title' => 'What we process',
-    'biometric.what_document' => 'A photo of the front and back of your identity card, or of the photo page of your passport. We read the MRZ (the “<<<” lines) to work out only your age and whether the document is valid.',
-    'biometric.what_face' => 'A short series of images of your face while you follow instructions (turning your head, closing your eyes). It checks that you are really there and that you are the person on the document.',
+    'biometric.what_document' => 'A photo of the front and back of your identity card, or of the photo page of your passport. We read the MRZ (the “<<<” lines) and the printed details on the side with your photo (date of birth, document number and expiry date), only to check that both sides belong to the same document, to work out your age and to check that the document is valid. Nothing that is read is kept or passed on.',
+    'biometric.what_face' => 'A short series of images of your face while you follow instructions (turning your head, closing your eyes, opening your mouth). It checks that you are really there and that you are the person on the document.',
     'biometric.how_title' => 'How',
     'biometric.how_local' => 'The analysis runs only on our own servers, in Europe, with no third-party service. Images are processed in memory and deleted as soon as the analysis ends: they are never stored.',
     'biometric.how_result' => '{project} receives only the result: required age reached or not. Never your name, your photo, your date of birth or your document number.',
@@ -186,4 +186,7 @@ return [
     'result.reason.capture_rejected' => 'The images sent could not be analysed.',
     'result.reason.capture_attempts_exceeded' => 'Maximum number of attempts reached.',
     'result.reason.manual_review_rejected' => 'After review, your verification could not be confirmed.',
+    'capture.challenge.open_mouth' => 'Open your mouth wide for one second, then close it.',
+    'result.reason.document_inconsistent' => 'The photos do not match a single identity document: the front must show the side with your photo, and its details (date of birth, number, expiry date) must be readable and identical to those on the back.',
+    'result.reason.document_unsupported' => 'This type of document is not supported yet (for example the old French identity card). Please use your passport, or another verification method.',
 ];

@@ -74,6 +74,37 @@ Réponses :
   expiré et il couvre l'âge demandé. La réponse contient `"status": "verified"`, `"reused": true` et
   un objet `verification`. Cette vérification n'est pas facturée.
 
+### Méthode « pièce d'identité + visage » (`id_document_face`) : ce qu'elle garantit, et ce qu'elle ne garantit pas
+
+**Niveau d'assurance : faible à modéré.** Analyse 100 % locale (aucun fournisseur tiers), sans certification.
+
+Elle vérifie :
+- une pièce d'identité (carte au format ID-1 ou page de passeport TD3) détectée sur la photo, avec le portrait
+  à sa place ; la MRZ (chiffres de contrôle ICAO 9303) ; la concordance entre la face imprimée et la MRZ
+  (date de naissance et numéro ou date d'expiration) : le recto et le verso doivent venir d'une même pièce ;
+- l'âge exact et la validité du document ;
+- la correspondance entre le visage filmé et le portrait du document ;
+- un contrôle du vivant par défis aléatoires (tourner la tête, fermer les yeux, ouvrir la bouche ; 108 suites).
+
+Elle arrête notamment : une simple photo à la place du recto, deux pièces différentes combinées (la carte d'un
+mineur avec le verso de celle d'un parent), une photo fixe ou pivotée, une vidéo rejouée, le portrait du
+document animé.
+
+Elle **ne garantit pas** :
+- **aucune certification** ISO/IEC 30107-3 (détection d'attaque de présentation) ni ISO/IEC 19795 ;
+- **aucune détection d'injection** (caméra virtuelle, flux vidéo remplacé dans le navigateur) **ni de deepfake** :
+  une autre photo de la personne, animée et injectée, ou un échange de visage en temps réel, **passe** ;
+- **aucun contrôle des éléments de sécurité** du document (hologrammes, OVI, puce NFC) : un faux document
+  cohérent (MRZ calculée, champs imprimés concordants) passe ;
+- la ressemblance entre proches (frère ou sœur majeur) n'est pas mesurée : taux de fausse acceptation inconnu.
+
+Ne présentez pas cette méthode comme conforme à un référentiel qui exige la résistance à l'injection ou une
+certification ⚖️. Pour un besoin d'assurance élevé, préférez l'eID belge (phase 4).
+
+**Sous le seuil de correspondance, la vérification échoue** (pas de revue manuelle en V1). Intervention humaine
+(RGPD art. 22) : la personne peut toujours choisir une autre méthode sur la page, ou vous contacter ; vous
+pouvez relancer une vérification.
+
 ### 4. Consulter un résultat
 
 - `GET /api/v1/verifications?email=…&min_age=18`. **Encodez l'adresse dans l'URL** (`rawurlencode`,
@@ -86,7 +117,7 @@ Statuts renvoyés dans `status` :
 | `status` | Signification |
 |---|---|
 | `verified` | La vérification a abouti. `is_adult` vaut `true` ou `false` : une personne trop jeune est « vérifiée » avec `is_adult: false`. |
-| `pending` | Une session est en cours (`session_id`, `session_expires_at`). `review: true` : vérification manuelle en attente (méthode pièce d'identité + visage, projet réglé sur « revue ») ; le webhook part à la décision. |
+| `pending` | Une session est en cours (`session_id`, `session_expires_at`). |
 | `failed` | La dernière session a échoué. Motif dans `failure_reason` (voir §8). |
 | `not_verified` | Aucun résultat valable. Cela couvre aussi un résultat expiré, et un résultat qui ne permet pas de conclure pour le `min_age` demandé. Si la dernière session a abouti mais que son résultat n'est plus réutilisable (par exemple un résultat négatif à validité 0 h), il est rappelé dans `last_session` (`session_id`, `status`, `is_adult`, `min_age`, `verified_at`, `expires_at`, `method`) : c'est une information, pas une vérification valable. |
 
@@ -247,13 +278,14 @@ Motifs d'échec, dans `failure_reason` :
 | `code_attempts_exceeded` | Trop de codes erronés pour le contrôle de l'adresse. |
 | `mock_failure` | Échec simulé (sandbox). |
 | `document_unreadable` | Pièce d'identité + visage : MRZ illisible ou chiffres de contrôle faux. |
+| `document_inconsistent` | Les photos ne forment pas une même pièce : recto sans document, portrait absent de sa place, champs imprimés différents de la MRZ, type de document ≠ type de MRZ. |
+| `document_unsupported` | Document non pris en charge (ancienne carte d'identité française) : passeport ou autre méthode. |
 | `document_expired` | Document expiré. |
 | `liveness_failed` | Contrôle du vivant échoué (défis non réalisés, visage changé, rejeu suspecté). |
 | `face_not_found` | Aucun visage sur la photo du document. |
 | `face_mismatch` | Le visage ne correspond pas à la photo du document. |
 | `capture_rejected` | Images refusées par l'analyse. |
 | `capture_attempts_exceeded` | Trop de tirages de défis pour la session. |
-| `manual_review_rejected` | Revue manuelle défavorable. |
 
 Une panne du service d'analyse (arrêté, saturé, délai dépassé) n'est **pas** un échec : aucune décision,
 aucun webhook ; la session reste ouverte et la personne recommence (dans la limite des tirages de défis).
@@ -357,6 +389,36 @@ Responses:
   and it covers the requested age. The response contains `"status": "verified"`, `"reused": true` and
   a `verification` object. This verification is not billed.
 
+### "Identity document + face" method (`id_document_face`): what it guarantees, and what it does not
+
+**Assurance level: low to moderate.** 100 % local analysis (no third-party provider), not certified.
+
+It checks:
+- an identity document (ID-1 card or TD3 passport page) detected in the photo, with the portrait in its place;
+  the MRZ (ICAO 9303 check digits); that the printed side matches the MRZ (date of birth and document number or
+  expiry date): front and back must come from the same document;
+- the exact age and the document's validity;
+- that the filmed face matches the document portrait;
+- a liveness check with random challenges (turn your head, close your eyes, open your mouth; 108 sequences).
+
+It stops in particular: a plain photo instead of the front, two different documents combined (a minor's card
+with the back of a parent's), a still or rotated photo, a replayed video, the document portrait animated.
+
+It **does not guarantee**:
+- **no certification** under ISO/IEC 30107-3 (presentation attack detection) or ISO/IEC 19795;
+- **no injection detection** (virtual camera, video stream replaced in the browser) **and no deepfake
+  detection**: another photo of the person, animated and injected, or a real-time face swap, **passes**;
+- **no check of the document's security features** (holograms, OVI, NFC chip): a consistent forged document
+  (computed MRZ, matching printed fields) passes;
+- resemblance between relatives (an adult sibling) is not measured: false acceptance rate unknown.
+
+Do not present this method as compliant with a framework that requires injection resistance or a
+certification ⚖️. For a high assurance need, prefer the Belgian eID (phase 4).
+
+**Below the match threshold, the verification fails** (no manual review in V1). Human intervention (GDPR
+Art. 22): the person can always choose another method on the page, or contact you; you can start a new
+verification.
+
 ### 4. Query a result
 
 - `GET /api/v1/verifications?email=…&min_age=18`. **URL-encode the address**. Without encoding, `+`
@@ -369,7 +431,7 @@ Values of `status`:
 | `status` | Meaning |
 |---|---|
 | `verified` | The verification succeeded. `is_adult` is `true` or `false`: a person who is too young is "verified" with `is_adult: false`. |
-| `pending` | A session is in progress (`session_id`, `session_expires_at`). `review: true`: manual review pending (identity document + face method, project set to "review"); the webhook is sent on decision. |
+| `pending` | A session is in progress (`session_id`, `session_expires_at`). |
 | `failed` | The last session failed. Reason in `failure_reason` (see §8). |
 | `not_verified` | No valid result. This also covers an expired result, and a result that does not settle the requested `min_age`. If the last session completed but its result can no longer be reused (e.g. a negative result with a 0 h validity), it is given in `last_session` (`session_id`, `status`, `is_adult`, `min_age`, `verified_at`, `expires_at`, `method`): information only, not a valid verification. |
 

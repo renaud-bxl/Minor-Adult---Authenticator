@@ -87,7 +87,7 @@ final class CapturePayload
     {
         return [
             'reference_date' => $referenceDate,
-            'document' => ['front' => $this->front, 'back' => $this->back],
+            'document' => ['type' => $this->documentType, 'front' => $this->front, 'back' => $this->back],
             'selfie' => ['challenge' => $challenge, 'frames' => $this->frames],
             'liveness' => $liveness,
         ];

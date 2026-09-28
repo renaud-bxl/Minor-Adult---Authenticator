@@ -126,8 +126,9 @@ final class ConfigValidator
         if ($match < self::SFACE_SAME_PERSON || $match > 1 || $review <= 0 || $review > $match) {
             $problems[] = 'BIOMETRICS_FACE_MATCH_THRESHOLD et BIOMETRICS_FACE_REVIEW_THRESHOLD : 0 < revue ≤ acceptation ≤ 1, acceptation ≥ 0,363 (SFace)';
         }
-        if (!in_array($config->get('biometrics.below_threshold_default'), ['fail', 'review'], true)) {
-            $problems[] = 'BIOMETRICS_BELOW_THRESHOLD doit valoir fail ou review';
+        // Revue manuelle désactivée en V1 (audit phase 3, E3) : seule la valeur « fail » est admise.
+        if ($config->get('biometrics.below_threshold_default') !== 'fail') {
+            $problems[] = 'BIOMETRICS_BELOW_THRESHOLD doit valoir fail (revue manuelle désactivée en V1)';
         }
         $ttl = (int) $config->get('biometrics.review_ttl_hours');
         $timeout = (int) $config->get('biometrics.timeout');
